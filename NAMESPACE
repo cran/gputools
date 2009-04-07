@@ -1,0 +1,7 @@
+useDynLib(gputools)
+export(gpuCor, 
+	gpuTtest,
+	gpuLr, 
+	gpuGranger, 
+	gpuDist, gpuHclust, gpuDistClust,
+	gpuMatMult)
