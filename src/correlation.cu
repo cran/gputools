@@ -581,6 +581,36 @@ size_t gpuSignifFilter(const float * data, size_t rows, float * results)
 	return rowcount;
 }
 
+__global__ void noNAsPmccMeans(int nRows, int nCols, float * a, float * means)
+{
+	int
+		col = blockDim.x * blockIdx.x + threadIdx.x,
+		inOffset = col * nRows,
+		outOffset = threadIdx.x * blockDim.y,
+		j = outOffset + threadIdx.y;
+	float sum = 0.f;
+
+	if(col >= nCols) return;
+
+	__shared__ float threadSums[NUMTHREADS*NUMTHREADS];
+
+	for(int i = threadIdx.y; i < nRows; i += blockDim.y)
+		sum += a[inOffset + i];
+
+	threadSums[j] = sum;
+	__syncthreads();
+
+	for(int i = blockDim.y >> 1; i > 0; i >>= 1) {
+		if(threadIdx.y < i) {
+			threadSums[outOffset+threadIdx.y] 
+				+= threadSums[outOffset+threadIdx.y + i];
+			__syncthreads();
+		}
+	}
+	if(threadIdx.y == 0)
+		means[col] = threadSums[outOffset] / (float)nRows;
+}
+
 void cublasPMCC(const float * sampsa, size_t numSampsA, const float * sampsb, 
 	size_t numSampsB, size_t sampSize, float * res)
 {
@@ -594,16 +624,23 @@ void cublasPMCC(const float * sampsa, size_t numSampsA, const float * sampsb,
 
 	cublasInit();
 	cublasAlloc(numSampsA*sampSize, fbytes, (void **)&gpua);
+
 	checkCublasError("PMCC : alloc for input A");
 	cublasSetVector(numSampsA*sampSize, fbytes, sampsa, 1, gpua, 1);
-	for(size_t i = 0; i < numSampsA; i++) // calculate the mean of each sample
-		aRecipSD[i] = 
-			cublasSasum(sampSize, gpua+i*sampSize, 1) / (float)sampSize;
-	checkCublasError("PMCC : initial set and vector op for A");
 
 	float * gpuaRecipSD;
 	cublasAlloc(numSampsA, fbytes, (void **)&gpuaRecipSD);
-	cublasSetVector(numSampsA, fbytes, aRecipSD, 1, gpuaRecipSD, 1);
+
+	dim3
+		dimBlock(NUMTHREADS, NUMTHREADS);
+
+	int numBlocks = numSampsA / NUMTHREADS;
+	if(numBlocks * NUMTHREADS < numSampsA)
+		numBlocks++;
+
+	noNAsPmccMeans<<<numBlocks, dimBlock>>>(sampSize, numSampsA, gpua, 
+		gpuaRecipSD);
+
 	checkCublasError("PMCC : alloc and set workspace for A");
 
 	for(size_t i = 0; i < sampSize; i++) // subtract mean from each sample
@@ -625,13 +662,17 @@ void cublasPMCC(const float * sampsa, size_t numSampsA, const float * sampsb,
 	
 		cublasAlloc(numSampsB*sampSize, fbytes, (void **)&gpub);
 		cublasSetVector(numSampsB*sampSize, fbytes, sampsb, 1, gpub, 1);
-		for(size_t i = 0; i < numSampsB; i++) // calc the mean of each sample
-			bRecipSD[i] 
-				= cublasSasum(sampSize, gpub+i*sampSize, 1) / (float)sampSize;
-	
+
 		float * gpubRecipSD;
 		cublasAlloc(numSampsB, fbytes, (void **)&gpubRecipSD);
-		cublasSetVector(numSampsB, fbytes, bRecipSD, 1, gpubRecipSD, 1);
+
+		dim3 dimBlock(NUMTHREADS, NUMTHREADS);
+		int numBlocks = numSampsB / NUMTHREADS;
+		if(numBlocks * NUMTHREADS < numSampsB)
+			numBlocks++;
+
+		noNAsPmccMeans<<<numBlocks, dimBlock>>>(sampSize, numSampsB, gpub, 
+			gpubRecipSD);
 	
 		for(size_t i = 0; i < sampSize; i++) // subtract mean
 			cublasSaxpy(numSampsB, -1.f, gpubRecipSD, 1, gpub+i, sampSize);
@@ -639,7 +680,8 @@ void cublasPMCC(const float * sampsa, size_t numSampsA, const float * sampsb,
 	
 		for(size_t i = 0; i < numSampsB; i++) { // sum of squares
 			float denom = 
-				cublasSdot(sampSize, gpub+i*sampSize, 1, gpub+i*sampSize, 1);
+				cublasSdot(sampSize, gpub+i*sampSize, 1, 
+					gpub+i*sampSize, 1);
 			bRecipSD[i] = 1.f / sqrtf(denom);
 		}
 		for(size_t i = 0; i < numSampsB; i++) // div by s-o-s

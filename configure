@@ -1263,6 +1263,12 @@ fi
 
           ac_config_files="$ac_config_files R/gpuMatMult.R"
 
+          ac_config_files="$ac_config_files R/gpuQr.R"
+
+          ac_config_files="$ac_config_files R/gpuSvm.R"
+
+          ac_config_files="$ac_config_files R/gpuMi.R"
+
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -1819,6 +1825,9 @@ do
   "R/gpuHclust.R" ) CONFIG_FILES="$CONFIG_FILES R/gpuHclust.R" ;;
   "R/gpuLr.R" ) CONFIG_FILES="$CONFIG_FILES R/gpuLr.R" ;;
   "R/gpuMatMult.R" ) CONFIG_FILES="$CONFIG_FILES R/gpuMatMult.R" ;;
+  "R/gpuQr.R" ) CONFIG_FILES="$CONFIG_FILES R/gpuQr.R" ;;
+  "R/gpuSvm.R" ) CONFIG_FILES="$CONFIG_FILES R/gpuSvm.R" ;;
+  "R/gpuMi.R" ) CONFIG_FILES="$CONFIG_FILES R/gpuMi.R" ;;
   *) { { echo "$as_me:$LINENO: error: invalid argument: $ac_config_target" >&5
 echo "$as_me: error: invalid argument: $ac_config_target" >&2;}
    { (exit 1); exit 1; }; };;

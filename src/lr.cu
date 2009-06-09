@@ -4,7 +4,7 @@
 
 #include<cublas.h>
 
-#include<qrls.h>
+#include<qrdecomp.h>
 #include<cuseful.h>
 
 #define NUMTHREADS 512
@@ -191,7 +191,7 @@ void logRegression(size_t numParams, size_t numObs, const float * obs,
 		cublasSgemv('T', numObs, numParams, 1.f, dObs, numObs, adjy, 1, 
 			0.f, weights, 1);
 
-		qrlsSolver(numParams, numParams, A, weights, dCoeffs);
+		qrSolver(numParams, numParams, A, weights, dCoeffs);
 
 		cublasSaxpy(numObs, -1.f, expy, 1, oldexpy, 1);
 		sum = cublasSdot(numObs, oldexpy, 1, oldexpy, 1);

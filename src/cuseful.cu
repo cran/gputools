@@ -115,6 +115,17 @@ void getBernVect(float * vect, size_t n) {
 	}
 }
 
+int hasCudaError(const char * msg) {
+	int hasError = 0; 
+	cudaError_t err = cudaGetLastError();
+	if(cudaSuccess != err) {
+		fprintf(stderr, "cuda error : %s : %s\n", msg, cudaGetErrorString(err));
+		fatal(NULL);
+		hasError = 1;
+	}
+	return hasError;
+}
+
 void checkCudaError(const char * msg) {
 	cudaError_t err = cudaGetLastError();
 	if(cudaSuccess != err) {
@@ -156,4 +167,17 @@ void checkCublasError(const char * msg)
 			cublasGetErrorString(err));
 		fatal(NULL);
 	}
+}
+
+int hasCublasError(const char * msg)
+{
+	int hasError = 0;
+	cublasStatus err = cublasGetError();
+	if(err != CUBLAS_STATUS_SUCCESS) {
+		fprintf(stderr, "cublas error : %s : %s\n", msg, 
+			cublasGetErrorString(err));
+		fatal(NULL);
+		hasError = 1;
+	}
+	return hasError;
 }

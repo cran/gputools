@@ -2,10 +2,10 @@ GCCEXT := c
 NVEXT := cu
 
 GCCOBJS := nocuda.o
-NVOBJS := rinterface.o granger.o lr.o qrls.o correlation.o hcluster.o distance.o matmult.o cuseful.o
+NVOBJS := rinterface.o mi.o classification.o sort.o granger.o lr.o qrdecomp.o correlation.o hcluster.o distance.o matmult.o cuseful.o
 
 GCCPARAMS := -fPIC
-NVPARAMS= -code compute_13 -arch compute_13 -Xcompiler "-fPIC" -Xlinker "-fPIC" -I@CUDA_HOME@/include -L@CUDA_HOME@/lib -lcublas
+NVPARAMS= -code compute_13 -arch compute_13 -Xcompiler "-fPIC" -Xlinker "-fPIC" -I@CUDA_HOME@/include -L@CUDA_HOME@/lib -lcublas -lcuda
 
 TARGETS=gputools.so
 

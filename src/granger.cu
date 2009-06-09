@@ -9,9 +9,12 @@
 
 #define THREADSPERDIM	16
 
+#define FALSE 0
+#define TRUE !FALSE
+
 // mX has order rows x cols
 // vectY has length rows
-__global__ void getRestricted(int count, int rows, int cols, 
+__global__ void getRestricted(int countx, int county, int rows, int cols, 
 	float * mX, int mXdim, float * vY, int vYdim, float * mQ, int mQdim,
 	float * mR, int mRdim, float * vectB, int vectBdim) {
 
@@ -24,7 +27,7 @@ __global__ void getRestricted(int count, int rows, int cols,
 		* coli, * colj, 
 		* colQ, * colX;
 
-	if(m >= count) return;
+	if(m >= county) return;
 	if(m == 1) n = 0;
 	else n = 1;
 
@@ -33,7 +36,7 @@ __global__ void getRestricted(int count, int rows, int cols,
 	for(i = 0; i < rows; i++)
 		X[i] = 1.f;
 
-	Y = vY + (m * count + n) * vYdim;
+	Y = vY + (m * countx + n) * vYdim;
 	B = vectB + m * vectBdim;
 	Q = mQ + m * mQdim;
 	R = mR + m * mRdim;
@@ -86,30 +89,30 @@ __global__ void getRestricted(int count, int rows, int cols,
 
 // mX has order rows x cols
 // vectY has length rows
-__global__ void getUnrestricted(int count, int rows, int cols, 
+__global__ void getUnrestricted(int countx, int county, int rows, int cols, 
 	float * mX, int mXdim, float * vY, int vYdim, float * mQ, int mQdim,
 	float * mR, int mRdim, float * vectB, int vectBdim) {
 
 	int 
-		m = blockIdx.x * THREADSPERDIM + threadIdx.x, 
-		n = blockIdx.y * THREADSPERDIM + threadIdx.y, 
+		n = blockIdx.x * THREADSPERDIM + threadIdx.x, 
+		m = blockIdx.y * THREADSPERDIM + threadIdx.y, 
 		i, j, k;
 	float 
 		sum, invnorm,
 		* X, * Y, * Q, * R, * B,
 		* coli, * colj, 
 		* colQ, * colX;
-	if((m >= count) || (n >= count) || (m == n)) return;
+	if((m >= county) || (n >= countx)) return;
 
-	X = mX + (m * count + n) * mXdim;
+	X = mX + (m * countx + n) * mXdim;
 	// initialize the intercepts
 	for(i = 0; i < rows; i++) 
 		X[i] = 1.f;
 
-	Y = vY + (m*count+n) * vYdim;
-	B = vectB + (m*count+n) * vectBdim;
-	Q = mQ + (m*count+n) * mQdim;
-	R = mR + (m*count+n) * mRdim;
+	Y = vY + (m*countx+n) * vYdim;
+	B = vectB + (m*countx+n) * vectBdim;
+	Q = mQ + (m*countx+n) * mQdim;
+	R = mR + (m*countx+n) * mRdim;
 
 	// initialize Q with X ...
 	for(i = 0; i < rows; i++) {
@@ -157,15 +160,16 @@ __global__ void getUnrestricted(int count, int rows, int cols,
 	}
 }
 
-__global__ void ftest(int p, int rows, int cols, int rCols, int unrCols, 
-	float * obs, int obsDim, float * rCoeffs, int rCoeffsDim, 
-	float * unrCoeffs, int unrCoeffsDim, float * rdata, int rdataDim,
-	float * unrdata, int unrdataDim, float * results) {
-
+__global__ void ftest(int diagFlag, int p, int rows, int colsx, int colsy, 
+	int rCols, int unrCols, float * obs, int obsDim, 
+	float * rCoeffs, int rCoeffsDim, float * unrCoeffs, int unrCoeffsDim, 
+	float * rdata, int rdataDim, float * unrdata, int unrdataDim, 
+	float * dfStats, float * dpValues)
+{
 	int 
-		i = blockIdx.x * THREADSPERDIM + threadIdx.x, 
-		j = blockIdx.y * THREADSPERDIM + threadIdx.y, 
-		k, m;
+		j = blockIdx.x * THREADSPERDIM + threadIdx.x, 
+		i = blockIdx.y * THREADSPERDIM + threadIdx.y, 
+		idx = i*colsx + j, k, m;
 	float 
 		kobs, fp = (float) p, frows = (float) rows,
 		rSsq, unrSsq,
@@ -174,16 +178,20 @@ __global__ void ftest(int p, int rows, int cols, int rCols, int unrCols,
 		* tObs, * tRCoeffs, * tUnrCoeffs, 
 		* tRdata, * tUnrdata; 
 
-	if((i >= cols) || (j >= cols)) return;
-	if(i == j) return;
+	if((i >= colsy) || (j >= colsx)) return;
+	if((!diagFlag) && (i == j)) {
+		dfStats[idx] = 0.f;
+		// dpValues[idx] = 0.f;
+		return;
+	}
 
-	tObs = obs + i*cols*obsDim+j*obsDim;
+	tObs = obs + (i*colsx+j)*obsDim;
 
 	tRCoeffs = rCoeffs + i*rCoeffsDim;
 	tRdata = rdata + i*rdataDim;
 	
-	tUnrCoeffs = unrCoeffs + i*cols*unrCoeffsDim+j*unrCoeffsDim;
-	tUnrdata = unrdata + i*cols*unrdataDim+j*unrdataDim;
+	tUnrCoeffs = unrCoeffs + (i*colsx+j)*unrCoeffsDim;
+	tUnrdata = unrdata + (i*colsx+j)*unrdataDim;
 
 	rSsq = unrSsq = 0.f;
 	for(k = 0; k < rows; k++) {
@@ -198,9 +206,8 @@ __global__ void ftest(int p, int rows, int cols, int rCols, int unrCols,
 
 	}
 	score = ((rSsq - unrSsq)*(frows-2.f*fp-1.f)) / (fp*unrSsq);
-	int idx = (i*(cols-1) + ((j<i)? j:(j-1)))*2;
-	// printf("i : %d, j : %d, idx : %d\n", i, j, idx);
-	results[idx] = score;
+
+	dfStats[idx] = score;
 	
 	float 
 		x = score, mfact, alpha, sum = 0.f,
@@ -227,14 +234,17 @@ __global__ void ftest(int p, int rows, int cols, int rCols, int unrCols,
 		else alpha /= (float)b+k;
 		mfact *= m+1;
 	}
-	results[idx+1] = 1.f - sum;
+	dpValues[idx] = 1.f - sum;
 }
 
-void gpuGrangerTest(int rows, int cols, const float * y, int p, 
-	float * results) {
+void granger(int rows, int cols, const float * y, int p, 
+	float * fStats, float * pValues)
+{
 
-	if(cols < 2)
+	if(cols < 2) {
 		fatal("The Granger test needs at least 2 variables.\n");
+		return;
+	}
 	int
 		i, j, k, t = p+1,
 		fbytes = sizeof(float),
@@ -244,7 +254,7 @@ void gpuGrangerTest(int rows, int cols, const float * y, int p,
 		* unrQ, * unrR,
 		* restricted, * unrestricted,
 		* rdata, * unrdata,
-		* dresults;
+		* dfStats, * dpValues;
 	size_t 
 		size = cols*cols*fbytes, partSize = embedRows*size;
 
@@ -253,18 +263,9 @@ void gpuGrangerTest(int rows, int cols, const float * y, int p,
 	cudaMalloc((void **)&rQ, t*embedRows*cols*fbytes);
 	cudaMalloc((void **)&rR, t*t*cols*fbytes);
 	cudaMalloc((void **)&rdata, t*embedRows*cols*fbytes);
-	cudaMalloc((void **)&restricted, t*cols*fbytes);
-
-	cudaMalloc((void **)&unrQ, (embedCols-1)*partSize);
-	cudaMalloc((void **)&unrR, (embedCols-1)*(embedCols-1)*size);
-	cudaMalloc((void **)&unrestricted, (embedCols-1)*size);
 	cudaMalloc((void **)&unrdata, (embedCols-1)*partSize);
-
-	size_t resultSize = 2*cols*(cols-1)*fbytes;
-	cudaMalloc((void **)&dresults, resultSize);
-	checkCudaError("granger : attemped gpu memory allocation");
-
-	// results = (float *)xmalloc(resultSize);
+	cudaMalloc((void **)&restricted, t*cols*fbytes);
+	if( hasCudaError("granger: line 267: gpu memory allocation") ) return;
 
 	int
 		Ydim =  embedCols * embedRows,
@@ -274,12 +275,12 @@ void gpuGrangerTest(int rows, int cols, const float * y, int p,
 		unrRdim = (embedCols-1) * (embedCols-1),
 		unrestrictedDim = embedCols-1, unrdataDim = (embedCols-1)*embedRows;
 	float 
-		* ypos, * rdataPos, * unrdataPos;
-
+		* ypos, * rdataPos, * unrdataPos,
+		* evenCols;
 	int 
 		skip = 2*embedRows, colBytes = embedRows*fbytes;
-	const float * vectA, * vectB;
-	float * evenCols;
+	const float 
+		* vectA, * vectB;
 
 	for(i = 0; i < cols; i++) {
 		rdataPos = rdata+i*rdataDim;
@@ -305,10 +306,11 @@ void gpuGrangerTest(int rows, int cols, const float * y, int p,
 		// build restricted data from last set of unrestricted data
 		// only need one per column, not one for each pairing
 		for(k = 0; k < embedCols-2; k+=2) { 
-			cudaMemcpy(evenCols+(k*embedRows)/2, unrdataPos+(1+k)*embedRows, 
+			cudaMemcpy(evenCols+(k*embedRows)/2, unrdataPos+(1+k)*embedRows,
 				colBytes, cudaMemcpyDeviceToDevice);
 		}
 	}
+	if( hasCudaError("granger : mem copy from host to device") ) return;
 
 	int numBlocks;
 
@@ -321,27 +323,177 @@ void gpuGrangerTest(int rows, int cols, const float * y, int p,
 		dimUnrGrid(numBlocks, numBlocks), 
 		dimUnrBlock(THREADSPERDIM, THREADSPERDIM);
 
-	getRestricted<<<dimRGrid, dimRBlock>>>(cols, embedRows, t, rdata, rdataDim,
-		Y, Ydim, rQ, rQdim, rR, rRdim, restricted, restrictedDim);
-	getUnrestricted<<<dimUnrGrid, dimUnrBlock>>>(cols, embedRows, embedCols-1, 
+	getRestricted<<<dimRGrid, dimRBlock>>>(cols, cols, embedRows, t, rdata, 
+		rdataDim, Y, Ydim, rQ, rQdim, rR, rRdim, restricted, restrictedDim);
+	if( hasCudaError("granger: getRestricted kernel execution") ) return;
+
+	cudaFree(rQ);
+	cudaFree(rR);
+
+	cudaMalloc((void **)&unrQ, (embedCols-1)*partSize);
+	cudaMalloc((void **)&unrR, (embedCols-1)*(embedCols-1)*size);
+	cudaMalloc((void **)&unrestricted, (embedCols-1)*size);
+	if( hasCudaError("granger: line 336: attemped gpu memory allocation") ) 
+		return;
+
+	getUnrestricted<<<dimUnrGrid, dimUnrBlock>>>(cols, cols, embedRows, 
+		embedCols-1, 
 		unrdata, unrdataDim, Y, Ydim, unrQ, unrQdim, unrR, unrRdim, 
 		unrestricted, unrestrictedDim);
+	if( hasCudaError("granger : getUnRestricted kernel execution") ) return;
 
-	cudaThreadSynchronize();
+	cudaFree(unrQ);
+	cudaFree(unrR);
 
-	ftest<<<dimUnrGrid, dimUnrBlock>>>(p, embedRows, cols, t, embedCols-1, Y, 
-		Ydim, restricted, restrictedDim, unrestricted, unrestrictedDim, rdata, 
-		rdataDim, unrdata, unrdataDim, dresults); 
-	cudaMemcpy(results, dresults, resultSize, cudaMemcpyDeviceToHost);
+	size_t resultSize = cols*cols*fbytes;
+	cudaMalloc((void **)&dfStats, resultSize);
+	cudaMalloc((void **)&dpValues, resultSize);
+	if( hasCudaError("granger: line 350: gpu memory allocation") ) return;
+
+	ftest<<<dimUnrGrid, dimUnrBlock>>>(FALSE, p, embedRows, cols, cols, t, 
+		embedCols-1, Y, Ydim, restricted, restrictedDim, 
+		unrestricted, unrestrictedDim, rdata, rdataDim, unrdata, unrdataDim,
+		dfStats, dpValues); 
+	if( hasCudaError("granger : ftest kernel execution") ) return;
+
+	cudaMemcpy(fStats, dfStats, resultSize, cudaMemcpyDeviceToHost);
+	cudaMemcpy(pValues, dpValues, resultSize, cudaMemcpyDeviceToHost);
+	if( hasCudaError("granger : mem copy device to host") ) return;
 
 	cudaFree(Y);
-	cudaFree(rQ);
-	cudaFree(unrQ);
-	cudaFree(rR);
-	cudaFree(unrR);
 	cudaFree(restricted);
 	cudaFree(unrestricted);
 	cudaFree(rdata);
 	cudaFree(unrdata);
-	cudaFree(dresults);
+	cudaFree(dfStats);
+	cudaFree(dpValues);
+}
+
+void grangerxy(int rows, int colsx, const float * x, int colsy, 
+	const float * y, int p, float * fStats, float * pValues)
+{
+
+	if((p < 0) || (rows < 1) || (colsx < 1) || (colsy < 1)) {
+		fatal("The Granger XY test needs at least a pair variables.\n");
+		return;
+	}
+	int
+		i, j, k, t = p+1,
+		fbytes = sizeof(float),
+		embedRows = rows-p, embedCols = t*2;
+	float 
+		* Y, * rQ, * rR,
+		* unrQ, * unrR,
+		* restricted, * unrestricted,
+		* rdata, * unrdata,
+		* dfStats, * dpValues;
+	size_t 
+		size = colsx*colsy*fbytes, partSize = embedRows*size;
+
+	cudaMalloc((void **)&Y, embedCols*partSize);
+
+	cudaMalloc((void **)&rQ, t*embedRows*colsy*fbytes);
+	cudaMalloc((void **)&rR, t*t*colsy*fbytes);
+	cudaMalloc((void **)&rdata, t*embedRows*colsy*fbytes);
+	cudaMalloc((void **)&restricted, t*colsy*fbytes);
+
+	cudaMalloc((void **)&unrQ, (embedCols-1)*partSize);
+	cudaMalloc((void **)&unrR, (embedCols-1)*(embedCols-1)*size);
+	cudaMalloc((void **)&unrestricted, (embedCols-1)*size);
+	cudaMalloc((void **)&unrdata, (embedCols-1)*partSize);
+	checkCudaError("grangerxy : attemped gpu memory allocation");
+
+	int
+		Ydim =  embedCols * embedRows,
+		rQdim = t * embedRows, rRdim = t * t,
+		rdataDim = t*embedRows, restrictedDim = t,
+		unrQdim = (embedCols-1) * embedRows, 
+		unrRdim = (embedCols-1) * (embedCols-1),
+		unrestrictedDim = embedCols-1, unrdataDim = (embedCols-1)*embedRows;
+	float 
+		* ypos, * rdataPos, * unrdataPos;
+
+	int 
+		skip = 2*embedRows, colBytes = embedRows*fbytes;
+	const float * vectA, * vectB;
+	float * evenCols;
+
+	for(i = 0; i < colsy; i++) {
+		rdataPos = rdata+i*rdataDim;
+		evenCols = rdataPos+embedRows;
+		vectA = y+i*rows; 
+		for(j = 0; j < colsx; j++) {
+			ypos = Y+(i*colsx+j)*Ydim;
+			unrdataPos = unrdata+(i*colsx+j)*unrdataDim;
+
+			vectB = x+j*rows;
+
+			for(k = 0; k < p+1; k++) { // produce t subcols
+				cudaMemcpy(ypos+k*skip, vectA+(p-k), embedRows*fbytes, 
+					cudaMemcpyHostToDevice);
+				cudaMemcpy(ypos+k*skip+embedRows, vectB+(p-k), 
+					embedRows*fbytes, cudaMemcpyHostToDevice);
+			}
+			cudaMemcpy(unrdataPos+embedRows, ypos+skip,
+				(embedCols-2)*embedRows*fbytes, cudaMemcpyDeviceToDevice);
+		}
+		// build restricted data from last set of unrestricted data
+		// only need one per column, not one for each pairing
+		for(k = 0; k < embedCols-2; k+=2) { 
+			cudaMemcpy(evenCols+(k*embedRows)/2, unrdataPos+(1+k)*embedRows, 
+				colBytes, cudaMemcpyDeviceToDevice);
+		}
+		char errline[16];
+		sprintf(errline, "gxy err : %d\n", i);
+		if( hasCudaError(errline) ) return;
+	}
+	checkCudaError("grangerxy : mem copy from host to device");
+
+	int 
+		numBlocksX = colsx / THREADSPERDIM,
+		numBlocksY = colsy / THREADSPERDIM;
+
+	if(numBlocksX * THREADSPERDIM < colsx) numBlocksX++;
+	if(numBlocksY * THREADSPERDIM < colsy) numBlocksY++;
+
+	dim3 
+		dimRGrid(numBlocksY), 
+		dimRBlock(THREADSPERDIM), 
+		dimUnrGrid(numBlocksX, numBlocksY), 
+		dimUnrBlock(THREADSPERDIM, THREADSPERDIM);
+
+	getRestricted<<<dimRGrid, dimRBlock>>>(colsx, colsy, embedRows, t, rdata, 
+		rdataDim, Y, Ydim, rQ, rQdim, rR, rRdim, restricted, restrictedDim);
+	getUnrestricted<<<dimUnrGrid, dimUnrBlock>>>(colsx, colsy, embedRows, 
+		embedCols-1, unrdata, unrdataDim, Y, Ydim, unrQ, unrQdim, unrR, 
+		unrRdim, unrestricted, unrestrictedDim);
+	checkCudaError("grangerxy : kernel execution get(Un)Restricted");
+
+	cudaFree(rQ);
+	cudaFree(unrQ);
+	cudaFree(rR);
+	cudaFree(unrR);
+
+	size_t resultSize = colsx*colsy*fbytes;
+	cudaMalloc((void **)&dfStats, resultSize);
+	cudaMalloc((void **)&dpValues, resultSize);
+	checkCudaError("grangerxy : attemped gpu memory allocation");
+
+	ftest<<<dimUnrGrid, dimUnrBlock>>>(TRUE, p, embedRows, colsx, colsy, t, 
+		embedCols-1, Y, Ydim, restricted, restrictedDim, unrestricted, 
+		unrestrictedDim, rdata, rdataDim, unrdata, unrdataDim, 
+		dfStats, dpValues); 
+	checkCudaError("grangerxy : kernel execution ftest");
+
+	cudaMemcpy(fStats, dfStats, resultSize, cudaMemcpyDeviceToHost);
+	cudaMemcpy(pValues, dpValues, resultSize, cudaMemcpyDeviceToHost);
+	checkCudaError("grangerxy : mem copy from device to host");
+
+	cudaFree(Y);
+	cudaFree(restricted);
+	cudaFree(unrestricted);
+	cudaFree(rdata);
+	cudaFree(unrdata);
+	cudaFree(dfStats);
+	cudaFree(dpValues);
 }

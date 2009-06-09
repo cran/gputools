@@ -1,11 +1,19 @@
 #include<stdio.h>
 #include<string.h>
+
+#include<cublas.h>
+
 #include<correlation.h>
 #include<distance.h>
 #include<granger.h>
 #include<hcluster.h>
 #include<lr.h>
 #include<matmult.h>
+#include<classification.h>
+#include<qrdecomp.h>
+#include<mi.h>
+#include<cuseful.h>
+
 #include<rinterface.h>
 
 void rpmcc(const float * samplesA, const int * numSamplesA,
@@ -100,10 +108,19 @@ void dlr(const int * numParams, const int * numObs, const float * obs,
 		*ridge, *maxiter);
 }
 
-void RGranger(const int * rows, const int * cols, const float * y, 
-	const int * p, float * results) {
+void rgpuGranger(const int * rows, const int * cols, const float * y, 
+	const int * p, float * fStats, float * pValues)
+{
 
-	gpuGrangerTest(*rows, *cols, y, *p, results);
+	granger(*rows, *cols, y, *p, fStats, pValues);
+}
+
+void rgpuGrangerXY(const int * rows, const int * colsx, const float * x, 
+	const int * colsy, const float * y, const int * p, 
+	float * fStats, float * pValues) 
+{
+
+	grangerxy(*rows, *colsx, x, *colsy, y, *p, fStats, pValues);
 }
 
 dist_method getDistEnum(const char * methodStr)
@@ -253,4 +270,123 @@ void RgpuMatMult(float * a, int * rowsa, int * colsa,
 	float * b, int * rowsb, int * colsb, float * result) {
 
 	gpuMatMult(a, *rowsa, *colsa, b, *rowsb, *colsb, result);
+}
+
+void R_SVRTrain(float * alpha, float * beta, float * y, float * x, float * C,
+	float * kernelwidth, float * eps, int * m, int * n, float * StoppingCrit,
+	int * numSvs)
+{
+	SVRTrain(alpha, beta, y, x, *C, *kernelwidth, *eps, *m, *n,
+		*StoppingCrit, numSvs);
+}
+
+void R_SVMTrain(float * alpha, float * beta, float * y, float * x, float * C,
+	float * kernelwidth, int * m, int * n, float * StoppingCrit,
+	int * numSvs, int * numPosSvs)
+{
+	SVMTrain(alpha, beta, y, x, *C, *kernelwidth, *m, *n, *StoppingCrit,
+		numSvs, numPosSvs);
+}
+
+void R_GPUPredictWrapper(int * m, int * n, int * k, float * kernelwidth,
+	const float * Test, const float * Svs, float * alphas,
+	float * prediction, float * beta, float * isregression)
+{
+	GPUPredictWrapper(*m, *n, *k, *kernelwidth, Test, Svs, alphas, prediction,
+		*beta, *isregression);
+}
+
+void R_produceSupportVectors(int * isRegression, int * m, int * n, int * numSVs,
+	int * numPosSVs, const float * x, const float * y, const float * alphas,
+	float * svCoefficients, float * supportVectors)
+{
+	getSupportVectors(*isRegression, *m, *n, *numSVs, *numPosSVs, x, y,
+		alphas, svCoefficients, supportVectors);
+}
+
+void RgetAucEstimate(int * n, double * classes, double * probs,
+	double * outputAuc)
+{
+	*outputAuc = getAucEstimate(*n, classes, probs);
+}
+
+void RgetQRDecomp(int * rows, int * cols, float * a, float * q, int * pivot,
+	int * rank)
+{
+
+	int
+		fbytes = sizeof(float),
+		m = *rows, n = *cols;
+	float
+		* da, * dq;
+
+	cublasAlloc(m*n, fbytes, (void **)&da);
+	cublasAlloc(m*m, fbytes, (void **)&dq);
+	cublasSetMatrix(m, n, fbytes, a, m, da, m);
+
+	getQRDecomp(m, n, dq, da, pivot);
+
+	cublasGetMatrix(m, n, fbytes, da, m, a, m);
+	cublasGetMatrix(m, m, fbytes, dq, m, q, m);
+	cublasFree(da);
+	cublasFree(dq);
+
+	int foundZero = 0;
+	for(int i = 0; (i < m) && (i < n); i++) {
+		if((a[i+i*m] < 0.0001f) && (a[i+i*m] > -0.0001f)) {
+			foundZero = 1;
+			*rank = i+1;
+			break;
+		}
+	}
+	if(!foundZero) {
+		if(m > n) *rank = n;
+		else *rank = m;
+	}
+}
+
+// solve for B:  XB=Y where B and Y are vectors and X is a matrix of
+// dimension rows x cols
+void RqrSolver(int * rows, int * cols, float * matX, float * vectY, 
+	float * vectB)
+{
+	int
+		fbytes = sizeof(float),
+		m = *rows, n = *cols;
+	float
+		* dX, * dY, * dB;
+
+	cublasAlloc(m*n, fbytes, (void **)&dX);
+	cublasAlloc(n, fbytes, (void **)&dB);
+	cublasAlloc(m, fbytes, (void **)&dY);
+	checkCublasError("RqrSolver: line 80");
+
+	cublasSetMatrix(m, n, fbytes, matX, m, dX, m);
+	cublasSetVector(m, fbytes, vectY, 1, dY, 1);
+	checkCublasError("RqrSolver: line 84");
+
+	qrSolver(m, n, dX, dY, dB);
+
+	cublasFree(dX);
+	cublasFree(dY);
+
+	cublasGetVector(n, fbytes, dB, 1, vectB, 1);
+	checkCublasError("RqrSolver: line 93");
+
+	cublasFree(dB);
+}
+
+void rBSplineMutualInfo(int * cols, int * nBins, int * splineOrder,
+	int * rowsA, const float * A, int * rowsB, const float * B, 
+	float * mutualInfo)
+{
+	bSplineMutualInfo(*cols, *nBins, *splineOrder,
+		*rowsA, A, *rowsB, B, mutualInfo);
+}
+
+void rBSplineMutualInfoSingle(int * cols,
+	int * nBins, int * splineOrder, int * rows, const float * A,
+	float * mutualInfo)
+{
+	bSplineMutualInfoSingle(*cols, *nBins, *splineOrder, *rows, A, mutualInfo);
 }

@@ -2,6 +2,9 @@ useDynLib(gputools)
 export(gpuCor, 
 	gpuTtest,
 	gpuLr, 
+	gpuQr, gpuSolve,
 	gpuGranger, 
 	gpuDist, gpuHclust, gpuDistClust,
-	gpuMatMult)
+	gpuMatMult,
+	gpuSvmTrain, gpuSvmPredict, getAucEstimate,
+	gpuMi)

@@ -42,8 +42,11 @@ extern "C" {
 		float * outcomes, float * coeffs, const float * epsilon, 
 		const float * ridge, const int * maxiter);
 
-	void RGranger(const int * rows, const int * cols, const float * y, 
-		const int * p, float * results);
+	void rgpuGranger(const int * rows, const int * colsy, const float * y, 
+		const int * p, float * fStats, float * pValues);
+	void rgpuGrangerXY(const int * rows, const int * colsx, const float * x, 
+		const int * colsy, const float * y, const int * p, 
+		float * fStats, float * pValues);
 
 	void Rdistclust(const char ** distmethod, const char ** clustmethod, 
 		const float * points, const int * numPoints, const int * dim,
@@ -56,6 +59,33 @@ extern "C" {
 
 	void RgpuMatMult(float * a, int * rowsa, int * colsa, 
 		float * b, int * rowsb, int * colsb, float * result);
+
+	void R_SVRTrain(float * alpha, float * beta, float * y, float * x,
+		float * C, float * kernelwidth, float * eps, int * m, int * n,
+		float * StoppingCrit, int * numSvs);
+	void R_SVMTrain(float * alpha, float * beta, float * y, float * x,
+		float * C, float * kernelwidth, int * m, int * n, float * StoppingCrit,
+		int * numSvs, int * numPosSvs);
+	void R_produceSupportVectors(int * isRegression, int * m, int * n,
+		int * numSVs, int * numPosSVs, const float * x, const float * y,
+		const float * alphas, float * svCoefficients, float * supportVectors);
+	void R_GPUPredictWrapper(int * m, int * n, int * k, float * kernelwidth,
+		const float * Test, const float * Svs, float * alphas,
+		float * prediction, float * beta, float * isregression);
+	void RgetAucEstimate(int * n, double * classes, double * probs,
+		double * outputAuc);
+
+	void RgetQRDecomp(int * rows, int * cols, float * a, float * q, int * pivot,
+		int * rank);
+	void RqrSolver(int * rows, int * cols, float * matX, float * vectY, 
+		float * vectB);
+
+	void rBSplineMutualInfo(int * cols, int * nBins, int * splineOrder,
+		int * rowsA, const float * A, int * rowsB, const float * B, 
+		float * mutualInfo);
+	void rBSplineMutualInfoSingle(int * cols,
+		int * nBins, int * splineOrder, int * rows, const float * A,
+		float * mutualInfo);
 }
 
 void formatClustering(const int len, const int * sub,  const int * sup, 

@@ -1,0 +1,39 @@
+gpuQr <- function(a)
+{
+	if(!@HAS_CUDA@) {
+		warning("unable to find CUDA installation\n\t1.  uninstall package gputools\n\t2.  check that you have installed a CUDA capable driver\n\t3.  check that you have installed the CUDA toolkit correctly\n\t4.  check that the environment variable CUDA_HOME is set to the install location of the CUDA toolkit\n")
+		return()
+	}
+
+	m <- nrow(a)
+	n <- ncol(a)
+	fcall <- .C("RgetQRDecomp", as.integer(m), as.integer(n), 
+		R = as.single(a), Q = single(m*m), pivot = integer(n),
+		rank = integer(1))
+
+	R <- matrix(fcall$R, m, n)
+	R <- R[1:n,1:n]
+	Q <- matrix(fcall$Q, m, m)
+	Q <- Q[1:n,1:m]
+	Q <- t(Q)
+
+	pivot <- fcall$pivot + 1
+	rank <- fcall$rank
+
+	return(list(Q=Q, R=R, pivot=pivot, rank=rank))
+}
+
+# solve for b: xb = y
+gpuSolve <- function(x, y)
+{
+	if(!@HAS_CUDA@) {
+		warning("unable to find CUDA installation\n\t1.  uninstall package gputools\n\t2.  check that you have installed a CUDA capable driver\n\t3.  check that you have installed the CUDA toolkit correctly\n\t4.  check that the environment variable CUDA_HOME is set to the install location of the CUDA toolkit\n")
+		return()
+	}
+
+	m <- nrow(x)
+	n <- ncol(x)
+	fcall <- .C("RqrSolver", as.integer(m), as.integer(n), as.single(x), 
+		as.single(y), solution = single(n))
+	return(fcall$solution)
+}
