@@ -22,8 +22,8 @@
 }
 
 \value{
-	a matrix of floating point numbers whose i, j entry represents the 
-	distance between vector i and vector j from the 'points' argument.
+	a class of type "dist" containing floating point numbers representing the 
+	distances between vectors from the 'points' argument.
 }
 
 \seealso{

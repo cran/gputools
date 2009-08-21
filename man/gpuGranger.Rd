@@ -4,7 +4,7 @@
 
 \description{
 	This function performs, with the aid of a GPU, Granger Causality Tests on 
-	permutations of pairs of columns of the input matrixes 'x' and 'y'.
+	permutations of pairs of columns of the input matrices 'x' and 'y'.
 }
 
 \usage{
@@ -21,21 +21,20 @@ gpuGranger(x, y=NULL, lag)
 }
 
 \value{a list of two single precision floating point matrices both of the same
-	dimension.  The two matrices are fTests and pValues.  The fTests matrix
-	holds the F-statistics from the Granger causality tests.  The pValues matrix
-	holds rough estimations of the p-value for the F-statistic of the same
-	row.  Note that the p-values for F-statistics greater than magnitude one
-	differ from that calculated by the package MSBVAR's 'granger.test'.
+	dimension. The two matrices are fStatistics and pValues. The
+	fStatistics matrix holds the F-statistics from the Granger causality tests.
+	Each element of the pValues matrix is the p-value for the corresponding
+	element of the fStatistics matrix.
 
-	If y is NULL, the test is run on permutations of pairs of columns of x.  To
+	If y is NULL, the test is run on permutations of pairs of columns of x. To
 	find the Granger causality F-statistic estimating the answer to
-	"Does variable x[ ,j] Granger-cause variable x[ ,i]?", look at fTests[i, j]
-	and pValues[i, j].
+	"Does variable x[ ,j] Granger-cause variable x[ ,i]?", look at
+	fStatistics[i, j] and pValues[i, j].
 
 	If y is not NULL, the test is run on permutations of pairs (x[ ,i], y[ ,j]).
 	To find the Granger causality F-statistic estimating the answer to
-	"Does variable y[ ,j] Granger-cause variable x[ ,i]?", look at fTests[i, j]
-	and pValues[i, j].
+	"Does variable y[ ,j] Granger-cause variable x[ ,i]?", look at
+	fStatistics[i, j] and pValues[i, j].
 }
 
 \examples{
@@ -55,6 +54,6 @@ numYRandVars <- 3
 numYSamples <- 20
 y <- matrix(runif(numYRandVars*numYSamples), numYSamples, numYRandVars)
 
-result <- gpuGranger(randVarSequences, lag = 5)
+result <- gpuGranger(x, y, lag = 5)
 print(result)
 }

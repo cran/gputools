@@ -1,58 +1,71 @@
-gpuCor <- function(x, y = NULL, method = c("pearson", "kendall"), 
-	anyNAs = FALSE) 
+gpuCor <- function(x, y = NULL, use = "everything", method = "pearson")
 {
+	x <- as.matrix(x)
 	nx <- ncol(x)
 	size <- nrow(x)
-	if(is.null(y)) { y <- x }
+
+	if(is.null(y)) {
+		y <- x
+	} else {
+		y <- as.matrix(y)
+	}
 	ny <- ncol(y)
+
 	n <- nx * ny
 
-	if(!@HAS_CUDA@) {
-		warning("unable to find CUDA installation\n\t1.  uninstall package gputools\n\t2.  check that you have installed a CUDA capable driver\n\t3.  check that you have installed the CUDA toolkit correctly\n\t4.  check that the environment variable CUDA_HOME is set to the install location of the CUDA toolkit\n")
-		return()
+    methods <- c("pearson", "kendall")
+	method <- pmatch(method, methods, -1)
+	if(is.na(method)) {
+		stop("invalid correlation method")
+	}
+	if(method == -1) {
+		stop("ambiguous correlation method")
 	}
 
-	if((!is.null(method)) && (method[1] == "pearson")) {
-		if(anyNAs) {
-			answer <- .C("rpmcc", NAOK=TRUE, PACKAGE="gputools",
-				as.single(x), as.integer(nx),
-				as.single(y), as.integer(ny), as.integer(size),
-				pairs = single(n), corr = single(n), ts = single(n))
+    uses <- c("everything", "pairwise.complete.obs")
+	use <- pmatch(use, uses, -1)
+	if(is.na(use)) {
+		stop("invalid correlation method")
+	}
+	if(use == -1) {
+		stop("ambiguous correlation method")
+	}
 
-			pairs <- t(matrix(answer$pairs, ny, nx))
-			corr <- t(matrix(answer$corr, ny, nx))
-			ts <- t(matrix(answer$ts, ny, nx))
-			return(list(pairs = pairs, coefficients = corr, ts = ts))
-		} else {
-			a <- .C("RcublasPMCC", PACKAGE="gputools", 
-				as.single(x), as.integer(nx),
-				as.single(y), as.integer(ny), as.integer(size),
-				result = single(nx * ny))
-			return(t(matrix(a$result, ny, nx)))
+	if(methods[method] == "pearson") {
+		answer <- .C("rpmcc", NAOK=TRUE, PACKAGE="gputools",
+			as.integer(use - 1), as.single(x), as.integer(nx),
+			as.single(y), as.integer(ny), as.integer(size),
+			pairs = single(n), corr = single(n), ts = single(n))
+
+		pairs <- t(matrix(answer$pairs, ny, nx))
+		corr <- t(matrix(answer$corr, ny, nx))
+		ts <- t(matrix(answer$ts, ny, nx))
+
+		return(list(coefficients = corr, ts = ts, pairs = pairs))
+
+	} else if(methods[method] == "kendall") {
+
+		if(uses[use] != "everything") {
+			warning("NA handling for Kendall's is not yet supported. Defaulting to using everything. Sorry for any inconvenience.")
 		}
-	} else if((!is.null(method)) && (method[1] == "kendall")) {
-		if(anyNAs) {
-			stop("NA handling for Kendall's is not yet implemented")
-		} else {
-			a <- .C("RgpuKendall", PACKAGE = "gputools",
-				as.single(x), nx, as.single(y), ny, 
-				size, result = double(nx*ny))
-			return(matrix(a$result, nx, ny))
-		}
+
+		a <- .C("RgpuKendall", PACKAGE = "gputools",
+			as.single(x), nx, as.single(y), ny, 
+			size, result = double(nx*ny))
+
+		pairs <- matrix(size, nx, ny)
+		return(list(coefficients = matrix(a$result, nx, ny), pairs = pairs))
 	} else {
-		stop("unimplemented correlation method")
+		stop("This correlation method is not yet supported. Sorry for any inconvenience.")
 	}
 }
 
 gpuTtest <- function(goodPairs, coeffs)
 {
-	if(!@HAS_CUDA@) {
-		warning("unable to find CUDA installation\n\t1.  uninstall package gputools\n\t2.  check that you have installed a CUDA capable driver\n\t3.  check that you have installed the CUDA toolkit correctly\n\t4.  check that the environment variable CUDA_HOME is set to the install location of the CUDA toolkit\n")
-		return()
-	}
-	n <- as.integer(length(goodPairs))
 	goodPairs <- as.single(goodPairs)
 	coeffs <- as.single(coeffs)
+
+	n <- as.integer(length(goodPairs))
 
 	.C("rtestT", NAOK = TRUE, PACKAGE = "gputools",
 		goodPairs, coeffs, n,

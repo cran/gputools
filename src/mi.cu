@@ -2,6 +2,7 @@
 #include<stdio.h>
 #include<string.h>
 #include<math.h>
+#include<R.h>
 
 #include<cuseful.h>
 
@@ -143,7 +144,7 @@ void bSplineMutualInfo(int cols, int nBins, int splineOrder,
 		* dA, * dB,
 		* dKnots, * dMi;
 
-	knots = (float *) xmalloc((nBins + splineOrder + 1) * sizeof(float));
+	knots = Calloc(nBins + splineOrder + 1, float);
 	initKnots(nBins, splineOrder, knots);
 
 	cudaMalloc((void **)&dKnots, (nBins + splineOrder + 1) * sizeof(float));
@@ -156,7 +157,7 @@ void bSplineMutualInfo(int cols, int nBins, int splineOrder,
 	cudaMemcpy(dKnots, knots, (nBins + splineOrder + 1) * sizeof(float),
 		cudaMemcpyHostToDevice);
 
-	free(knots);
+	Free(knots);
 	
 	cudaMemcpy2D(dA, pitchA, A, cols * sizeof(float),
 		cols * sizeof(float), rowsA, cudaMemcpyHostToDevice);
@@ -200,7 +201,7 @@ void bSplineMutualInfoSingle(int cols,
 		* knots,
 		* dA, * dKnots, * dMi;
 
-	knots = (float *) xmalloc((nBins + splineOrder + 1) * sizeof(float));
+	knots = Calloc(nBins + splineOrder + 1, float);
 	initKnots(nBins, splineOrder, knots);
 
 	cudaMalloc((void **)&dKnots, (nBins + splineOrder + 1) * sizeof(float));
@@ -211,7 +212,7 @@ void bSplineMutualInfoSingle(int cols,
 
 	cudaMemcpy(dKnots, knots, (nBins + splineOrder + 1) * sizeof(float),
 		cudaMemcpyHostToDevice);
-	free(knots);
+	Free(knots);
 	cudaMemcpy2D(dA, pitchA, A, cols * sizeof(float),
 		cols * sizeof(float), rows, cudaMemcpyHostToDevice);
 	

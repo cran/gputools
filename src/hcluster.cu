@@ -2,6 +2,7 @@
 #include<string.h>
 #include<math_constants.h>
 #include<cuseful.h>
+#include<R.h>
 #include<hcluster.h>
 
 #define NUM_THREADS 32
@@ -35,48 +36,50 @@ __global__ void find_min1_kernel(const float * dist, const size_t pitch_dist,
 	const size_t n, const float * count, float * min_val, size_t * min_col, 
 	const size_t row_offset)
 {
-  // Determine which row this block will handle
-  const size_t row = row_offset + blockIdx.x;
+	// Determine which row this block will handle
+	const size_t row = row_offset + blockIdx.x;
 
-  // If the row has already been merged, skip the work
-  if(row < n && count[row] < 0.0 && threadIdx.x == 0) {
-    min_val[row] = CUDART_INF_F;
-    min_col[row] = 0;    
-  }
+	// If the row has already been merged, skip the work
+	if((threadIdx.x == 0) && (row < n) && (count[row] < 0.f)) {
+		min_val[row] = CUDART_INF_F;
+		min_col[row] = 0;		
+	}
 
-  // Only do something if it matters
-  if(row < n && count[row] > 0.0) {
-    __shared__ float vals[NUM_THREADS];
-    __shared__ size_t cols[NUM_THREADS];
+	if((row >= n) || (count[row] <= 0.f))
+		return;
 
-    // Initialize with identity
-    vals[threadIdx.x] = CUDART_INF_F;
-    
-    // Find the minimum
-    for(size_t col = threadIdx.x; col <= row; col += NUM_THREADS) {
-      float t = dist[row * pitch_dist + col];
-      if(t < vals[threadIdx.x]) {
-	vals[threadIdx.x] = t;
-	cols[threadIdx.x] = col;
-      }
-    }
-    __syncthreads();
-        
-    // Reduce
-    for(size_t stride = NUM_THREADS >> 1; stride > 0; stride >>= 1) {
-      if(threadIdx.x < stride && vals[threadIdx.x] > vals[threadIdx.x + stride]) {
-	vals[threadIdx.x] = vals[threadIdx.x + stride];
-	cols[threadIdx.x] = cols[threadIdx.x + stride];
-      }
-      __syncthreads();
-    }
-    
-    // Write the result
-    if(threadIdx.x == 0) {
-      min_val[row] = vals[0];
-      min_col[row] = cols[0];
-    }
-  }
+	__shared__ float vals[NUM_THREADS];
+	__shared__ size_t cols[NUM_THREADS];
+
+	// Initialize with identity
+	vals[threadIdx.x] = CUDART_INF_F;
+		
+	// Find the minimum
+	for(size_t col = threadIdx.x; col <= row; col += NUM_THREADS) {
+		float t = dist[row * pitch_dist + col];
+		if(t < vals[threadIdx.x]) {
+			vals[threadIdx.x] = t;
+			cols[threadIdx.x] = col;
+		}
+	}
+	__syncthreads();
+				
+	// Reduce
+	for(size_t stride = NUM_THREADS >> 1; stride > 0; stride >>= 1) {
+		if((threadIdx.x < stride)
+			&& (vals[threadIdx.x] > vals[threadIdx.x + stride]))
+		{
+			vals[threadIdx.x] = vals[threadIdx.x + stride];
+			cols[threadIdx.x] = cols[threadIdx.x + stride];
+		}
+		__syncthreads();
+	}
+		
+	// Write the result
+	if(threadIdx.x == 0) {
+		min_val[row] = vals[0];
+		min_col[row] = cols[0];
+	}
 }
 
 __global__ void find_min2_kernel(const float * min_val, const size_t * min_col,
@@ -101,10 +104,11 @@ __global__ void find_min2_kernel(const float * min_val, const size_t * min_col,
 				
 	// Reduce
 	for(size_t stride = NUM_THREADS >> 1; stride > 0; stride >>= 1) {
-		if((threadIdx.x < stride) 
-			&& (vals[threadIdx.x] > vals[threadIdx.x + stride])) {
-			vals[threadIdx.x] = vals[threadIdx.x + stride];
-			cols[threadIdx.x] = cols[threadIdx.x + stride];
+		if(threadIdx.x < stride) {
+			if(vals[threadIdx.x] > vals[threadIdx.x + stride]) {
+				vals[threadIdx.x] = vals[threadIdx.x + stride];
+				cols[threadIdx.x] = cols[threadIdx.x + stride];
+			}
 		}
 		__syncthreads();
 	}
@@ -119,8 +123,9 @@ __global__ void find_min2_kernel(const float * min_val, const size_t * min_col,
 		val[iter] = vals[0];
 		sub[iter] = col_winner;
 		sup[iter] = row_winner;
+
 		count[row_winner] += count[col_winner];
-		count[col_winner] *= -1.0;
+		count[col_winner] *= -1.f;
 	}
 }
 
@@ -386,29 +391,36 @@ __global__ void ward_kernel(float * dist, const size_t pitch_dist,
 	const float * val, const size_t iter, const size_t col_offset, 
 	const float lambda, const float beta)
 {
-  const size_t col = col_offset + NUM_THREADS * blockIdx.x + threadIdx.x;
+	const size_t
+		col = col_offset + NUM_THREADS * blockIdx.x + threadIdx.x;
 
-  // If it matters
-  if(col < n) {
-    int col_winner = sub[iter];
-    int row_winner = sup[iter];
-    float top_val = dist[col_winner * pitch_dist + col];
-    float bot_val = dist[row_winner * pitch_dist + col];
-    float nr = count[row_winner];
-    float np = -1.0 * count[col_winner];
-    float nq = nr - np;
-    float nk = count[col];
-    bot_val = (bot_val * (np + nk) + top_val * (nq + nk) - val[iter] * nk) / (nr + nk);
-    if(nr == -nk || col == col_winner || col == row_winner) {
-      bot_val = CUDART_INF_F;
-    }
-    top_val = CUDART_INF_F;
-    // Write out
-    dist[col_winner * pitch_dist + col] = top_val;
-    dist[col * pitch_dist + col_winner] = top_val;
-    dist[row_winner * pitch_dist + col] = bot_val;
-    dist[col * pitch_dist + row_winner] = bot_val;
-  }
+	if(col >= n)
+		return;
+
+	int
+		col_winner = sub[iter], row_winner = sup[iter];
+
+    float
+		top_val = dist[col_winner * pitch_dist + col],
+		bot_val = dist[row_winner * pitch_dist + col],
+		nr = count[row_winner], np = -count[col_winner],
+		nq = nr - np, nk = count[col];
+
+	if((nr == -nk) || (col == col_winner) || (col == row_winner)) {
+		bot_val = CUDART_INF_F;
+	} else {
+		bot_val = (bot_val * (np + nk) + top_val * (nq + nk) - val[iter] * nk);
+		bot_val /= (nr + nk);
+		if(isinf(bot_val)) {
+			bot_val = CUDART_INF_F;
+		}
+	}
+	top_val = CUDART_INF_F;
+	
+	dist[col_winner * pitch_dist + col] = top_val;
+	dist[col * pitch_dist + col_winner] = top_val;
+	dist[row_winner * pitch_dist + col] = bot_val;
+	dist[col * pitch_dist + row_winner] = bot_val;
 }
 
 void hcluster(const float * dist, size_t dist_pitch, size_t n,
@@ -438,7 +450,7 @@ void hcluster(const float * dist, size_t dist_pitch, size_t n,
 		n * sizeof(float), n, cudaMemcpyHostToDevice);
 
 	// Every element starts in its own cluster
-	float * pre_count = (float *)malloc(n * sizeof(float));
+	float * pre_count = Calloc(n, float);
 	for(size_t i = 0; i < n; ++i)
 		pre_count[i] = 1.0;
 
@@ -446,7 +458,7 @@ void hcluster(const float * dist, size_t dist_pitch, size_t n,
 		cudaMemcpyHostToDevice);
 	checkCudaError("hcluster : malloc and memcpy");
 
-	free(pre_count);
+	Free(pre_count);
 
 	dim3 
 		grid0(NUM_BLOCKS, 1, 1), block0(NUM_THREADS, 1, 1),
@@ -560,14 +572,14 @@ void hclusterPreparedDistances(float * gpuDist, size_t pitch_dist_d, size_t n,
 	cudaMalloc((void**)&hcluster_merge_val_d, (n - 1) * sizeof(float));
 
 	// Every element starts in its own cluster
-	float * pre_count = (float *)malloc(n * sizeof(float));
+	float * pre_count = Calloc(n, float);
 	for(size_t i = 0; i < n; ++i)
-		pre_count[i] = 1.0;
+		pre_count[i] = 1.f;
 
 	cudaMemcpy(hcluster_count_d, pre_count, n * sizeof(float), 
 		cudaMemcpyHostToDevice);
 	checkCudaError("hcluster for gpu distances : initial malloc and memcpy");
-	free(pre_count);
+	Free(pre_count);
 
 	dim3 
 		grid0(NUM_BLOCKS, 1, 1), block0(NUM_THREADS, 1, 1),

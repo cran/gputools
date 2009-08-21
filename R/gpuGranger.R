@@ -1,27 +1,32 @@
 gpuGranger <- function(x, y=NULL, lag)
 {
-	if(!@HAS_CUDA@) {
-		warning("unable to find CUDA installation\n\t1.  uninstall package gputools\n\t2.  check that you have installed a CUDA capable driver\n\t3.  check that you have installed the CUDA toolkit correctly\n\t4.  check that the environment variable CUDA_HOME is set to the install location of the CUDA toolkit\n")
-		return()
-	}
-
+	x <- as.matrix(x)
 	rows <- nrow(x)
 	colsx <- ncol(x)
+
+	if(rows - lag <= 2 * lag + 1) {
+		stop("time sequence too short for lag: use longer sequences or smaller lag")
+	}
+
+	if(!is.null(y)) {
+		y <- as.matrix(y)
+	}
+
+	lag <- as.integer(lag)
 
 	if(is.null(y)) {
 		colsy <- colsx
 		cRetVal <- .C("rgpuGranger", PACKAGE = "gputools", 
-			as.integer(rows), as.integer(colsx), as.single(x), 
-			as.integer(lag), 
+			as.integer(rows), as.integer(colsx), as.single(x), lag, 
 			fStats = single(colsx*colsy), pValues = single(colsx*colsy))
 	} else {
 		colsy <- ncol(y)
 		cRetVal <- .C("rgpuGrangerXY", PACKAGE = "gputools", 
 			as.integer(rows), as.integer(colsx), as.single(x), 
-			as.integer(colsy), as.single(y), as.integer(lag), 
+			as.integer(colsy), as.single(y), lag, 
 			fStats = single(colsx*colsy), pValues = single(colsx*colsy))
 	}
 	fStats <- matrix(cRetVal$fStats, colsx, colsy)
 	pValues <- matrix(cRetVal$pValues, colsx, colsy)
-	return(list(fStats, pValues))
+	return(list(fStatistics = fStats, pValues = pValues))
 }

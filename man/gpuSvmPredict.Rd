@@ -3,7 +3,7 @@
 \title{A support vector machine style binary classifier}
 
 \description{
-	This function classifies points in a dataset with a support vector machine
+	This function classifies points in a data set with a support vector machine
 	using a GPU.  The negative category is represented by -1.f and the
 	positive one by 1.f.  The underlying code is adapted from Austin
 	Carpenter's cuSVM which can be found at
@@ -50,10 +50,10 @@ data[i,].
 
 \examples{
 # y is discrete: -1 or 1 and we set isRegression to FALSE
-y <- round(runif(20, min = 0, max = 1))
-for(i in 1:20) { if(y[i] == 0) {y[i] <- -1}}
+y <- round(runif(100, min = 0, max = 1))
+for(i in 1:5) { if(y[i] == 0) {y[i] <- -1}}
 
-x <- matrix(runif(200), 20, 10)
+x <- matrix(runif(500), 100, 5)
 
 a <- gpuSvmTrain(y, x, isRegression = FALSE)
 print(a)
@@ -63,9 +63,9 @@ b <- gpuSvmPredict(x, a$supportVectors, a$svCoefficients, a$svOffset,
 print(b)
 
 # this time around, y : -1 or 1 and we set isRegression to FALSE
-y <- runif(20, min = -1, max = 1)
+y <- runif(100, min = -1, max = 1)
 
-x <- matrix(runif(200), 20, 10)
+x <- matrix(runif(500), 100, 5)
 
 a <- gpuSvmTrain(y, x, isRegression = TRUE)
 print(a)

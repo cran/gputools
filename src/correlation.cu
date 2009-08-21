@@ -3,6 +3,7 @@
 #include<math.h>
 #include<cublas.h>
 #include<cuseful.h>
+#include<R.h>
 #include<correlation.h>
 
 #define FALSE 0
@@ -24,6 +25,9 @@ __global__ void gpuMeans(const float * vectsA, size_t na,
 		threadSumsA[NUMTHREADS], threadSumsB[NUMTHREADS],
 		count[NUMTHREADS];
 
+	if((bx >= na) || (by >= nb))
+		return;
+
 	threadSumsA[tx] = 0.f;
 	threadSumsB[tx] = 0.f;
 	count[tx] = 0.f;
@@ -36,7 +40,6 @@ __global__ void gpuMeans(const float * vectsA, size_t na,
 			threadSumsB[tx] += b;
 			count[tx] += 1.f;
 		}
-		__syncthreads();
 	}
 	__syncthreads();
     
@@ -69,6 +72,9 @@ __global__ void gpuSD(const float * vectsA, size_t na,
 	__shared__ float 
 		meanA, meanB, n,
 		threadSumsA[NUMTHREADS], threadSumsB[NUMTHREADS];
+
+	if((bx >= na) || (by >= nb))
+		return;
 
 	if(tx == 0) {
 		meanA = means[bx*nb*2+by*2];	
@@ -120,6 +126,9 @@ __global__ void gpuPMCC(const float * vectsa, size_t na,
 		sdA, sdB, 
 		threadSums[NUMTHREADS];
 
+	if((x >= na) || (y >= nb))
+		return;
+
 	if(tx == 0) {
 		meanA = means[x*nb*2+y*2];
 		meanB = means[x*nb*2+y*2+1];	
@@ -148,6 +157,148 @@ __global__ void gpuPMCC(const float * vectsa, size_t na,
 	if(tx == 0) correlations[x*nb+y] = threadSums[0] / (n - 1.f);
 }
 
+__global__ void gpuMeansNoTest(const float * vectsA, size_t na, 
+	const float * vectsB, size_t nb, size_t dim, 
+	float * means, float * numPairs)
+{
+	size_t 
+		offset, stride,
+		bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x;
+	float a, b;
+
+	__shared__ float 
+		threadSumsA[NUMTHREADS], threadSumsB[NUMTHREADS],
+		count[NUMTHREADS];
+
+	if((bx >= na) || (by >= nb))
+		return;
+
+	threadSumsA[tx] = 0.f;
+	threadSumsB[tx] = 0.f;
+	count[tx] = 0.f;
+
+	for(offset = tx; offset < dim; offset += NUMTHREADS) {
+		a = vectsA[bx * dim + offset];
+		b = vectsB[by * dim + offset];
+
+		threadSumsA[tx] += a;
+		threadSumsB[tx] += b;
+		count[tx] += 1.f;
+	}
+	__syncthreads();
+    
+	for(stride = NUMTHREADS >> 1; stride > 0; stride >>= 1) {
+		if(tx < stride) {
+			threadSumsA[tx] += threadSumsA[tx + stride];
+			threadSumsB[tx] += threadSumsB[tx + stride];
+			count[tx] += count[tx+stride];
+		}
+		__syncthreads();
+	}
+	if(tx == 0) {
+		means[bx*nb*2+by*2] = threadSumsA[0] / count[0];
+		means[bx*nb*2+by*2+1] = threadSumsB[0] / count[0];
+		numPairs[bx*nb+by] = count[0];
+	}
+}
+
+__global__ void gpuSDNoTest(const float * vectsA, size_t na,
+	const float * vectsB, size_t nb, size_t dim, 
+	const float * means, const float * numPairs, float * sds)
+{
+	size_t 
+		offset, stride,
+		tx = threadIdx.x, 
+		bx = blockIdx.x, by = blockIdx.y;
+	float 
+		a, b,
+		termA, termB;
+	__shared__ float 
+		meanA, meanB, n,
+		threadSumsA[NUMTHREADS], threadSumsB[NUMTHREADS];
+
+	if((bx >= na) || (by >= nb))
+		return;
+
+	if(tx == 0) {
+		meanA = means[bx*nb*2+by*2];	
+		meanB = means[bx*nb*2+by*2+1];	
+		n = numPairs[bx*nb+by]; 
+	}
+	__syncthreads();
+
+	threadSumsA[tx] = 0.f;
+	threadSumsB[tx] = 0.f;
+	for(offset = tx; offset < dim; offset += NUMTHREADS) {
+		a = vectsA[bx * dim + offset];
+		b = vectsB[by * dim + offset];
+
+		termA = a - meanA;
+		termB = b - meanB;
+		threadSumsA[tx] += termA * termA;
+		threadSumsB[tx] += termB * termB;
+	}
+	__syncthreads();
+
+	for(stride = NUMTHREADS >> 1; stride > 0; stride >>= 1) {
+		if(tx < stride) {
+			threadSumsA[tx] += threadSumsA[tx + stride];
+			threadSumsB[tx] += threadSumsB[tx + stride];
+		}
+		__syncthreads();
+	}
+	if(tx == 0) {
+		sds[bx*nb*2+by*2]   = sqrtf(threadSumsA[0] / (n - 1.f));
+		sds[bx*nb*2+by*2+1] = sqrtf(threadSumsB[0] / (n - 1.f));
+	}
+}
+
+__global__ void gpuPMCCNoTest(const float * vectsa, size_t na,
+	const float * vectsb, size_t nb, size_t dim,
+	const float * numPairs, const float * means, const float * sds,
+	float * correlations) 
+{
+	size_t 
+		offset, stride,
+		x = blockIdx.x, y = blockIdx.y, 
+		tx = threadIdx.x;
+	float 
+		a, b, n, scoreA, scoreB;
+    __shared__ float 
+		meanA, meanB, 
+		sdA, sdB, 
+		threadSums[NUMTHREADS];
+
+	if((x >= na) || (y >= nb))
+		return;
+
+	if(tx == 0) {
+		meanA = means[x*nb*2+y*2];
+		meanB = means[x*nb*2+y*2+1];	
+		sdA = sds[x*nb*2+y*2];
+		sdB = sds[x*nb*2+y*2+1];	
+		n = numPairs[x*nb+y]; 
+	}
+	__syncthreads();
+
+	threadSums[tx] = 0.f;
+	for(offset = tx; offset < dim; offset += NUMTHREADS) {
+		a = vectsa[x * dim + offset];
+		b = vectsb[y * dim + offset];
+		
+		scoreA = (a - meanA) / sdA; 
+		scoreB = (b - meanB) / sdB;
+		threadSums[tx] += scoreA * scoreB;
+	}
+	__syncthreads();
+
+	for(stride = NUMTHREADS >> 1; stride > 0; stride >>= 1) {
+		if(tx < stride) threadSums[tx] += threadSums[tx + stride];
+		__syncthreads();
+	}
+	if(tx == 0) correlations[x*nb+y] = threadSums[0] / (n - 1.f);
+}
+
 __global__ void gpuSignif(const float * gpuNumPairs, 
 	const float * gpuCorrelations, size_t n, float * gpuTScores)
 {
@@ -159,7 +310,9 @@ __global__ void gpuSignif(const float * gpuNumPairs,
 
 	start = bx * NUMTHREADS * THREADWORK + tx * THREADWORK;
 	for(i = 0; i < THREADWORK; i++) {
-		if(start+i > n) break;
+		if(start+i >= n)
+			break;
+
 		npairs = gpuNumPairs[start+i];
 		cor = gpuCorrelations[start+i];
 		radicand = (npairs - 2.f) / (1.f - cor * cor);
@@ -211,7 +364,7 @@ void hostSignif(const float * goodPairs, const float * coeffs, size_t n,
 	}
 }
 
-__host__ void pmcc(const float * vectsa, size_t na,
+__host__ void pmcc(UseObs whichObs, const float * vectsa, size_t na,
 	const float * vectsb, size_t nb, size_t dim, float * numPairs, 
 	float * correlations, float * signifs)
 {
@@ -242,24 +395,30 @@ __host__ void pmcc(const float * vectsa, size_t na,
 	}
 	checkCudaError("PMCC function : malloc and memcpy");
 
-	gpuMeans<<<grid, block>>>(gpuVA, na, gpuVB, nb, dim, gpumean, gpuNumPairs);
-	checkCudaError("1");
-	cudaThreadSynchronize();
-	checkCudaError("2");
-
-	gpuSD<<<grid, block>>>(gpuVA, na, gpuVB, nb, dim, gpumean, gpuNumPairs, 
-		gpuSds);
-	checkCudaError("3");
-	cudaThreadSynchronize();
-	checkCudaError("4");
-
-	gpuPMCC<<<grid, block>>>(gpuVA, na, gpuVB, nb, dim, gpuNumPairs, gpumean, 
-		gpuSds, gpuCorrelations); 
-	checkCudaError("5");
+	switch(whichObs) {
+		case pairwiseComplete:
+			gpuMeans<<<grid, block>>>(gpuVA, na, gpuVB, nb, dim, gpumean,
+				gpuNumPairs);
+			cudaThreadSynchronize();
+			gpuSD<<<grid, block>>>(gpuVA, na, gpuVB, nb, dim, gpumean, gpuNumPairs, 
+				gpuSds);
+			cudaThreadSynchronize();
+			gpuPMCC<<<grid, block>>>(gpuVA, na, gpuVB, nb, dim, gpuNumPairs,
+				gpumean, gpuSds, gpuCorrelations); 
+			break;
+		default:
+			gpuMeansNoTest<<<grid, block>>>(gpuVA, na, gpuVB, nb, dim, gpumean,
+				gpuNumPairs);
+			cudaThreadSynchronize();
+			gpuSDNoTest<<<grid, block>>>(gpuVA, na, gpuVB, nb, dim, gpumean,
+				gpuNumPairs, gpuSds);
+			cudaThreadSynchronize();
+			gpuPMCCNoTest<<<grid, block>>>(gpuVA, na, gpuVB, nb, dim, gpuNumPairs,
+				gpumean, gpuSds, gpuCorrelations); 
+	}
 
 	cudaMemcpy(correlations, gpuCorrelations, na*nb*fbytes, 
 		cudaMemcpyDeviceToHost);
-	checkCudaError("6");
 	cudaMemcpy(numPairs, gpuNumPairs, na*nb*fbytes, cudaMemcpyDeviceToHost);
 	checkCudaError("PMCC function : kernel finish and memcpy");
 
@@ -277,8 +436,13 @@ __host__ void pmcc(const float * vectsa, size_t na,
 }
 
 void setDevice(int device) {
+	int deviceCount = 0;
+	cudaGetDeviceCount(&deviceCount);
+	if((device < 0) || (device >= deviceCount))
+		fatal("The gpu id number is not valid.");
+
 	cudaSetDevice(device);
-	checkCudaError("PMCC function : choosing gpu");
+	checkCudaError("setDevice function : choosing gpu");
 }
 
 void getDevice(int * device) {
@@ -604,8 +768,8 @@ __global__ void noNAsPmccMeans(int nRows, int nCols, float * a, float * means)
 		if(threadIdx.y < i) {
 			threadSums[outOffset+threadIdx.y] 
 				+= threadSums[outOffset+threadIdx.y + i];
-			__syncthreads();
 		}
+		__syncthreads();
 	}
 	if(threadIdx.y == 0)
 		means[col] = threadSums[outOffset] / (float)nRows;
@@ -614,22 +778,20 @@ __global__ void noNAsPmccMeans(int nRows, int nCols, float * a, float * means)
 void cublasPMCC(const float * sampsa, size_t numSampsA, const float * sampsb, 
 	size_t numSampsB, size_t sampSize, float * res)
 {
-	size_t 
-		fbytes = sizeof(float);
 	int 
 		same = (sampsa == sampsb);
 	float
 		* gpua, * gpub, * gpuRes,
-		* aRecipSD = (float *)xmalloc(numSampsA*fbytes);
+		* aRecipSD = Calloc(numSampsA, float);
 
 	cublasInit();
-	cublasAlloc(numSampsA*sampSize, fbytes, (void **)&gpua);
+	cublasAlloc(numSampsA*sampSize, sizeof(float), (void **)&gpua);
 
 	checkCublasError("PMCC : alloc for input A");
-	cublasSetVector(numSampsA*sampSize, fbytes, sampsa, 1, gpua, 1);
+	cublasSetVector(numSampsA*sampSize, sizeof(float), sampsa, 1, gpua, 1);
 
 	float * gpuaRecipSD;
-	cublasAlloc(numSampsA, fbytes, (void **)&gpuaRecipSD);
+	cublasAlloc(numSampsA, sizeof(float), (void **)&gpuaRecipSD);
 
 	dim3
 		dimBlock(NUMTHREADS, NUMTHREADS);
@@ -637,9 +799,6 @@ void cublasPMCC(const float * sampsa, size_t numSampsA, const float * sampsb,
 	int numBlocks = numSampsA / NUMTHREADS;
 	if(numBlocks * NUMTHREADS < numSampsA)
 		numBlocks++;
-
-	noNAsPmccMeans<<<numBlocks, dimBlock>>>(sampSize, numSampsA, gpua, 
-		gpuaRecipSD);
 
 	checkCublasError("PMCC : alloc and set workspace for A");
 
@@ -654,17 +813,17 @@ void cublasPMCC(const float * sampsa, size_t numSampsA, const float * sampsb,
 	}
 	for(size_t i = 0; i < numSampsA; i++) // div each sample by sqrt of s-o-s
 		cublasSscal(sampSize, aRecipSD[i], gpua+i*sampSize, 1); 
-	free(aRecipSD);
+	Free(aRecipSD);
 	checkCublasError("PMCC : vector ops for A");
 
 	if(!same) {
-		float * bRecipSD = (float *)xmalloc(numSampsB*fbytes);
+		float * bRecipSD = Calloc(numSampsB, float);
 	
-		cublasAlloc(numSampsB*sampSize, fbytes, (void **)&gpub);
-		cublasSetVector(numSampsB*sampSize, fbytes, sampsb, 1, gpub, 1);
+		cublasAlloc(numSampsB*sampSize, sizeof(float), (void **)&gpub);
+		cublasSetVector(numSampsB*sampSize, sizeof(float), sampsb, 1, gpub, 1);
 
 		float * gpubRecipSD;
-		cublasAlloc(numSampsB, fbytes, (void **)&gpubRecipSD);
+		cublasAlloc(numSampsB, sizeof(float), (void **)&gpubRecipSD);
 
 		dim3 dimBlock(NUMTHREADS, NUMTHREADS);
 		int numBlocks = numSampsB / NUMTHREADS;
@@ -686,17 +845,17 @@ void cublasPMCC(const float * sampsa, size_t numSampsA, const float * sampsb,
 		}
 		for(size_t i = 0; i < numSampsB; i++) // div by s-o-s
 			cublasSscal(sampSize, bRecipSD[i], gpub+i*sampSize, 1); 
-		free(bRecipSD);
+		Free(bRecipSD);
 		checkCublasError("PMCC : setup for matrix B");
 	} else {
 		gpub = gpua;
 	}
 
-	cublasAlloc(numSampsA*numSampsB, fbytes, (void **)&gpuRes);
+	cublasAlloc(numSampsA*numSampsB, sizeof(float), (void **)&gpuRes);
 	cublasSgemm('T', 'N', numSampsB, numSampsA, sampSize, 1.f, 
 		gpub, sampSize, gpua, sampSize, 0.f, gpuRes, numSampsB); 
 		// each entry : sum of prod of standard scores
-	cublasGetVector(numSampsA*numSampsB, fbytes, gpuRes, 1, res, 1);
+	cublasGetVector(numSampsA*numSampsB, sizeof(float), gpuRes, 1, res, 1);
 	checkCublasError("PMCC : alloc, matrix mult and get result");
 	cublasFree(gpuRes);
 	cublasShutdown();
@@ -729,86 +888,4 @@ void permHostKendall(const float * a, size_t na, const float * b, size_t nb,
 				sampleSize);
 		}
 	}
-}
-
-__global__ void gpuKendall(const float * a, size_t na, 
-	const float * b, size_t nb, size_t sampleSize, double * results) 
-{
-	size_t 
-		i, j, tests, 
-		tx = threadIdx.x, ty = threadIdx.y, 
-		bx = blockIdx.x, by = blockIdx.y,
-		rowa = bx * sampleSize, rowb = by * sampleSize;
-	float 
-		discordant, concordant = 0.f, 
-		numer, denom;
-
-	__shared__ float threadSums[NUMTHREADS*NUMTHREADS];
-
-	for(i = tx; i < sampleSize; i += NUMTHREADS) {
-		for(j = i+1+ty; j < sampleSize; j += NUMTHREADS) {
-			tests = ((a[rowa+j] >  a[rowa+i]) && (b[rowb+j] >  b[rowb+i]))
-				+ ((a[rowa+j] <  a[rowa+i]) && (b[rowb+j] <  b[rowb+i])) 
-				+ ((a[rowa+j] == a[rowa+i]) && (b[rowb+j] == b[rowb+i])); 
-			concordant = concordant + (float)tests;
-		}
-	}
-	threadSums[tx*NUMTHREADS+ty] = concordant;
-
-	__syncthreads();
-	for(i = NUMTHREADS >> 1; i > 0; i >>= 1) {
-		if(ty < i) 
-			threadSums[tx*NUMTHREADS+ty] += threadSums[tx*NUMTHREADS+ty+i];
-		__syncthreads();
-	}
-	if(ty == 0) {
-		for(i = NUMTHREADS >> 1; i > 0; i >>= 1) {
-			if(tx < i) 
-				threadSums[tx*NUMTHREADS] += threadSums[(tx+i)*NUMTHREADS];
-			__syncthreads();
-		}
-	}
-
-	if((tx == 0) && (ty == 0)) {
-		concordant = threadSums[0];
-		denom = (float)sampleSize;
-		denom = (denom * (denom - 1.f)) / 2.f; discordant = denom - concordant;
-		numer = concordant - discordant;
-		results[by*na+bx] = ((double)numer)/((double)denom);
-	}
-}
-
-__host__ void masterKendall(const float * x,  size_t nx, 
-	const float * y, size_t ny, size_t sampleSize, double * results) 
-{
-	size_t 
-		outputLength = nx * ny, outputBytes = outputLength*sizeof(double),
-		xBytes = nx*sampleSize*sizeof(float), 
-		yBytes = ny*sampleSize*sizeof(float); 
-	float
-		* gpux, * gpuy; 
-	double
-		* gpuResults;
-	dim3
-		initGrid(nx, ny), initBlock(NUMTHREADS, NUMTHREADS);
-
-	cudaMalloc((void **)&gpux, xBytes);
-	cudaMalloc((void **)&gpuy, yBytes);
-	checkCudaError("input vector space allocation");
-
-	cudaMemcpy(gpux, x, xBytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(gpuy, y, yBytes, cudaMemcpyHostToDevice);
-	checkCudaError("copying input vectors to gpu");
-
-	cudaMalloc((void **)&gpuResults, outputBytes);
-	checkCudaError("allocation of space for result matrix");
-
-	gpuKendall<<<initGrid, initBlock>>>(gpux, nx, gpuy, ny, sampleSize, 
-		gpuResults);
-	checkCudaError("executing gpu kernel");
-
-	cudaFree(gpux); cudaFree(gpuy);
-	cudaMemcpy(results, gpuResults, outputBytes, cudaMemcpyDeviceToHost);
-	cudaFree(gpuResults);
-	checkCudaError("copying results from gpu and cleaning up");
 }

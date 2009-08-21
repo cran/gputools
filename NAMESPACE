@@ -1,10 +1,10 @@
 useDynLib(gputools)
 export(gpuCor, 
 	gpuTtest,
-	gpuLr, 
 	gpuQr, gpuSolve,
 	gpuGranger, 
 	gpuDist, gpuHclust, gpuDistClust,
 	gpuMatMult,
 	gpuSvmTrain, gpuSvmPredict, getAucEstimate,
-	gpuMi)
+	gpuMi,
+	chooseGpu, getGpuId)

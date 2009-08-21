@@ -1,6 +1,7 @@
 #include<stdio.h>
 #include<math.h>
 #include<string.h>
+#include<R.h>
 
 #include<cublas.h>
 
@@ -19,18 +20,16 @@ __global__ void gpuLogistic(size_t nobs, float * x, const float * y,
 	size_t
 		row = blockIdx.x*blockDim.x + threadIdx.x; 
 
-	if(row > nobs) return;
+	if(row >= nobs) return;
 
 	mean = xi = x[row];
 	yi = y[row];
-//	wi = w[row];
 
 	mean = 1.f / (1.f + __expf(-mean));
 	deriv = mean*(1.f-mean);
 
 	means[row] = mean;
 	weights[row] = deriv;
-	__syncthreads();
 	x[row] = (deriv * xi + (yi - mean));
 }
 
@@ -40,12 +39,11 @@ __host__ void logistic(size_t nobs, float * gpuX, const float * gpuY,
 	size_t 
 		numBlocks = nobs / NUMTHREADS;
 
-	if(numBlocks*NUMTHREADS < nobs) numBlocks++;
+	if(numBlocks*NUMTHREADS < nobs)
+		numBlocks++;
 
-	dim3
-		dimGrid(numBlocks), dimBlock(NUMTHREADS);
-
-	gpuLogistic<<<dimGrid, dimBlock>>>(nobs, gpuX, gpuY, gpuMeans, gpuWeights);
+	gpuLogistic<<<numBlocks, NUMTHREADS>>>(nobs, gpuX, gpuY,
+		gpuMeans, gpuWeights);
 }
 
 __global__ void gpuWeights(size_t numParams, size_t numObs, const float * obs, 
@@ -55,7 +53,9 @@ __global__ void gpuWeights(size_t numParams, size_t numObs, const float * obs,
 		i,
 		row = blockIdx.x*blockDim.x + threadIdx.x; 
 
-	if(row > numObs) return;
+	if(row >= numObs)
+		return;
+
 	for(i = 0; i < numParams; i++)
 		holder[row+i*numObs] = obs[row+i*numObs] * weights[row];
 }
@@ -66,39 +66,40 @@ __host__ void applyWeights(size_t numParams, size_t numObs, const float * obs,
 	size_t 
 		numBlocks = numObs / NUMTHREADS;
 
-	if(numBlocks*NUMTHREADS < numObs) numBlocks++;
+	if(numBlocks*NUMTHREADS < numObs)
+		numBlocks++;
 
-	dim3
-		dimGrid(numBlocks), dimBlock(NUMTHREADS);
-
-	gpuWeights<<<dimGrid, dimBlock>>>(numParams, numObs, obs, weights, holder);
+	gpuWeights<<<numBlocks, NUMTHREADS>>>(numParams, numObs, obs,
+		weights, holder);
 }
 
-__global__ void gpuRidge(size_t n, float ridge, float * mat) {
+__global__ void gpuRidge(int n, float ridge, float * mat) {
 	size_t
 		i = blockIdx.x*blockDim.x + threadIdx.x; 
 
-	if(i > n) return;
+	if(i >= n)
+		return;
+
 	mat[i*n+i] += ridge;
 }
 
-__host__ void doRidge(size_t n, float ridge, float * mat) {
-	size_t 
+__host__ void doRidge(int n, float ridge, float * mat) {
+	int
 		numBlocks = n / NUMTHREADS;
 
-	if(numBlocks*NUMTHREADS < n) numBlocks++;
+	if(numBlocks*NUMTHREADS < n)
+		numBlocks++;
 
-	dim3
-		dimGrid(numBlocks), dimBlock(NUMTHREADS);
-
-	gpuRidge<<<dimGrid, dimBlock>>>(n, ridge, mat);
+	gpuRidge<<<numBlocks, NUMTHREADS>>>(n, ridge, mat);
 }
 
 __global__ void gpuAbsSub(size_t n, const float * a, float * b) {
 	size_t
 		i = blockIdx.x*blockDim.x + threadIdx.x; 
 
-	if(i > n) return;
+	if(i >= n)
+		return;
+
 	b[i] = fabsf(a[i] - b[i]);
 }
 
@@ -106,12 +107,10 @@ __host__ void absSub(size_t n, const float * a, float * b) {
 	size_t 
 		numBlocks = n / NUMTHREADS;
 
-	if(numBlocks*NUMTHREADS < n) numBlocks++;
+	if(numBlocks*NUMTHREADS < n)
+		numBlocks++;
 
-	dim3
-		dimGrid(numBlocks), dimBlock(NUMTHREADS);
-
-	gpuAbsSub<<<dimGrid, dimBlock>>>(n, a, b);
+	gpuAbsSub<<<numBlocks, NUMTHREADS>>>(n, a, b);
 }
 
 void transpose(size_t n, float * a) {
@@ -166,10 +165,12 @@ void logRegression(size_t numParams, size_t numObs, const float * obs,
 	checkCudaError("logRegression : attempted gpu memory allocation");
 
 	// init(numObs, w, oldexpy);
-	float * initExpy = (float *)xmalloc(numObs*fbytes);
-	for(i = 0; i < numObs; i++) initExpy[i] = -1.f;
+	float * initExpy = Calloc(numObs, float);
+	for(i = 0; i < numObs; i++)
+		initExpy[i] = -1.f;
+
 	cudaMemcpy(oldexpy, initExpy, outBytes, cudaMemcpyHostToDevice);
-	free(initExpy);
+	Free(initExpy);
 	
 	int didConverge = FALSE;
 	for(i = 0; i < maxiter; i++) {
@@ -202,7 +203,7 @@ void logRegression(size_t numParams, size_t numObs, const float * obs,
 		cudaMemcpy(oldexpy, expy, outBytes, cudaMemcpyDeviceToDevice);
 	}
 	if(!didConverge) 
-		fprintf(stderr, "The iterative regression algo did not converge to a solution.\n");
+		warning("The iterative regression algo did not converge to a solution.\n");
 
 	cudaMemcpy(coeffs, dCoeffs, coeffBytes, cudaMemcpyDeviceToHost);
 

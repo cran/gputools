@@ -1,3 +1,4 @@
+#include<Rmath.h>
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
@@ -164,7 +165,7 @@ __global__ void ftest(int diagFlag, int p, int rows, int colsx, int colsy,
 	int rCols, int unrCols, float * obs, int obsDim, 
 	float * rCoeffs, int rCoeffsDim, float * unrCoeffs, int unrCoeffsDim, 
 	float * rdata, int rdataDim, float * unrdata, int unrdataDim, 
-	float * dfStats, float * dpValues)
+	float * dfStats) // float * dpValues)
 {
 	int 
 		j = blockIdx.x * THREADSPERDIM + threadIdx.x, 
@@ -207,8 +208,11 @@ __global__ void ftest(int diagFlag, int p, int rows, int colsx, int colsy,
 	}
 	score = ((rSsq - unrSsq)*(frows-2.f*fp-1.f)) / (fp*unrSsq);
 
+	if(!isfinite(score))
+		score = 0.f;
+
 	dfStats[idx] = score;
-	
+/* 	
 	float 
 		x = score, mfact, alpha, sum = 0.f,
 		d1 = (float)p, d2 = (float)rows - 2.f * (float)p - 1.f,
@@ -234,7 +238,22 @@ __global__ void ftest(int diagFlag, int p, int rows, int colsx, int colsy,
 		else alpha /= (float)b+k;
 		mfact *= m+1;
 	}
-	dpValues[idx] = 1.f - sum;
+	dpValues[idx] = 1.f - sum; */
+}
+
+void getPValues(int rows, int cols, const float * fStats, int p, int embedRows,
+	float * pValues)
+{
+	float fscore = 0.f;
+
+	for(int i = 0; i < rows; i++) {
+		for(int j = 0; j < cols; j++) {
+			fscore = fStats[i + j * rows];
+			pValues[i + j * rows] = 1.f - (float) pf((double) fscore,
+				(double) p, (double)embedRows - 2.0 * (double) p - 1.0,
+				1, 0);
+		}
+	}
 }
 
 void granger(int rows, int cols, const float * y, int p, 
@@ -254,7 +273,7 @@ void granger(int rows, int cols, const float * y, int p,
 		* unrQ, * unrR,
 		* restricted, * unrestricted,
 		* rdata, * unrdata,
-		* dfStats, * dpValues;
+		* dfStats; // * dpValues;
 	size_t 
 		size = cols*cols*fbytes, partSize = embedRows*size;
 
@@ -347,18 +366,20 @@ void granger(int rows, int cols, const float * y, int p,
 
 	size_t resultSize = cols*cols*fbytes;
 	cudaMalloc((void **)&dfStats, resultSize);
-	cudaMalloc((void **)&dpValues, resultSize);
+	// cudaMalloc((void **)&dpValues, resultSize);
 	if( hasCudaError("granger: line 350: gpu memory allocation") ) return;
 
 	ftest<<<dimUnrGrid, dimUnrBlock>>>(FALSE, p, embedRows, cols, cols, t, 
 		embedCols-1, Y, Ydim, restricted, restrictedDim, 
 		unrestricted, unrestrictedDim, rdata, rdataDim, unrdata, unrdataDim,
-		dfStats, dpValues); 
+		dfStats); // dpValues); 
 	if( hasCudaError("granger : ftest kernel execution") ) return;
 
 	cudaMemcpy(fStats, dfStats, resultSize, cudaMemcpyDeviceToHost);
-	cudaMemcpy(pValues, dpValues, resultSize, cudaMemcpyDeviceToHost);
+	// cudaMemcpy(pValues, dpValues, resultSize, cudaMemcpyDeviceToHost);
 	if( hasCudaError("granger : mem copy device to host") ) return;
+
+	getPValues(cols, cols, fStats, p, embedRows, pValues);
 
 	cudaFree(Y);
 	cudaFree(restricted);
@@ -366,7 +387,7 @@ void granger(int rows, int cols, const float * y, int p,
 	cudaFree(rdata);
 	cudaFree(unrdata);
 	cudaFree(dfStats);
-	cudaFree(dpValues);
+	// cudaFree(dpValues);
 }
 
 void grangerxy(int rows, int colsx, const float * x, int colsy, 
@@ -386,7 +407,7 @@ void grangerxy(int rows, int colsx, const float * x, int colsy,
 		* unrQ, * unrR,
 		* restricted, * unrestricted,
 		* rdata, * unrdata,
-		* dfStats, * dpValues;
+		* dfStats; // * dpValues;
 	size_t 
 		size = colsx*colsy*fbytes, partSize = embedRows*size;
 
@@ -476,18 +497,20 @@ void grangerxy(int rows, int colsx, const float * x, int colsy,
 
 	size_t resultSize = colsx*colsy*fbytes;
 	cudaMalloc((void **)&dfStats, resultSize);
-	cudaMalloc((void **)&dpValues, resultSize);
+	// cudaMalloc((void **)&dpValues, resultSize);
 	checkCudaError("grangerxy : attemped gpu memory allocation");
 
 	ftest<<<dimUnrGrid, dimUnrBlock>>>(TRUE, p, embedRows, colsx, colsy, t, 
 		embedCols-1, Y, Ydim, restricted, restrictedDim, unrestricted, 
 		unrestrictedDim, rdata, rdataDim, unrdata, unrdataDim, 
-		dfStats, dpValues); 
+		dfStats); // dpValues); 
 	checkCudaError("grangerxy : kernel execution ftest");
 
 	cudaMemcpy(fStats, dfStats, resultSize, cudaMemcpyDeviceToHost);
-	cudaMemcpy(pValues, dpValues, resultSize, cudaMemcpyDeviceToHost);
+	// cudaMemcpy(pValues, dpValues, resultSize, cudaMemcpyDeviceToHost);
 	checkCudaError("grangerxy : mem copy from device to host");
+
+	getPValues(colsx, colsy, fStats, p, embedRows, pValues);
 
 	cudaFree(Y);
 	cudaFree(restricted);
@@ -495,5 +518,5 @@ void grangerxy(int rows, int colsx, const float * x, int colsy,
 	cudaFree(rdata);
 	cudaFree(unrdata);
 	cudaFree(dfStats);
-	cudaFree(dpValues);
+	// cudaFree(dpValues);
 }

@@ -21,6 +21,7 @@
 #include<math.h>
 #include<cublas.h>
 #include<cuda.h>
+#include<R.h>
 
 #include<cuseful.h>
 #include<sort.h>
@@ -1547,13 +1548,11 @@ void GPUPredictWrapper(int m, int n, int k, float kernelwidth,
 
 double getAucEstimate(int n, double * classes, double * probs)
 {
-	int 
-		fbytes = sizeof(double);
 	double 
-		* combined = (double *) xmalloc(2 * n * fbytes);
+		* combined = Calloc(2 * n, double);
 
-	memcpy(combined, classes, n * fbytes);
-	memcpy(combined + n, probs, n * fbytes);
+	memcpy(combined, classes, n * sizeof(double));
+	memcpy(combined + n, probs, n * sizeof(double));
 
 	quicksort(n, 2, 1, combined, 0, n - 1);
 
@@ -1568,6 +1567,52 @@ double getAucEstimate(int n, double * classes, double * probs)
 			n1 = n1 + 1.0;
 		}
 	}
-	free(combined);
+	Free(combined);
 	return (sum - (n0 * (n0 + 1.0)) / 2.0) / (n0 * n1);
+}
+
+void R_SVRTrain(float * alpha, float * beta, float * y, float * x, float * C,
+	float * kernelwidth, float * eps, int * m, int * n, float * StoppingCrit,
+	int * numSvs)
+{
+	checkDoubleCapable("Your device doesn't support double precision arithmetic, so the SVM functionality is disabled. Sorry for any inconvenience.");
+
+	SVRTrain(alpha, beta, y, x, *C, *kernelwidth, *eps, *m, *n,
+		*StoppingCrit, numSvs);
+}
+
+void R_SVMTrain(float * alpha, float * beta, float * y, float * x, float * C,
+	float * kernelwidth, int * m, int * n, float * StoppingCrit,
+	int * numSvs, int * numPosSvs)
+{
+	checkDoubleCapable("Your device doesn't support double precision arithmetic, so the SVM functionality is disabled. Sorry for any inconvenience.");
+
+	SVMTrain(alpha, beta, y, x, *C, *kernelwidth, *m, *n, *StoppingCrit,
+		numSvs, numPosSvs);
+}
+
+void R_GPUPredictWrapper(int * m, int * n, int * k, float * kernelwidth,
+	const float * Test, const float * Svs, float * alphas,
+	float * prediction, float * beta, float * isregression)
+{
+	checkDoubleCapable("Your device doesn't support double precision arithmetic, so the SVM functionality is disabled. Sorry for any inconvenience.");
+
+	GPUPredictWrapper(*m, *n, *k, *kernelwidth, Test, Svs, alphas, prediction,
+		*beta, *isregression);
+}
+
+void R_produceSupportVectors(int * isRegression, int * m, int * n, int * numSVs,
+	int * numPosSVs, const float * x, const float * y, const float * alphas,
+	float * svCoefficients, float * supportVectors)
+{
+	checkDoubleCapable("Your device doesn't support double precision arithmetic, so the SVM functionality is disabled. Sorry for any inconvenience.");
+
+	getSupportVectors(*isRegression, *m, *n, *numSVs, *numPosSVs, x, y,
+		alphas, svCoefficients, supportVectors);
+}
+
+void RgetAucEstimate(int * n, double * classes, double * probs,
+	double * outputAuc)
+{
+	*outputAuc = getAucEstimate(*n, classes, probs);
 }

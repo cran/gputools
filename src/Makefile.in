@@ -1,32 +1,28 @@
-GCCEXT := c
-NVEXT := cu
+EXT := cu
 
-GCCOBJS := nocuda.o
-NVOBJS := rinterface.o mi.o classification.o sort.o granger.o lr.o qrdecomp.o correlation.o hcluster.o distance.o matmult.o cuseful.o
+OBJS := rinterface.o mi.o sort.o granger.o qrdecomp.o correlation.o hcluster.o distance.o matmult.o cuseful.o
 
-GCCPARAMS := -fPIC
-NVPARAMS= -code compute_13 -arch compute_13 -Xcompiler "-fPIC" -Xlinker "-fPIC" -I@CUDA_HOME@/include -L@CUDA_HOME@/lib -lcublas -lcuda
+OBJS13 := @OBJS13@ 
 
-TARGETS=gputools.so
+PARAMS := @EMULATION@ -I@CUDA_HOME@/include -Xcompiler "@R_INCLUDE@ @CPICFLAGS@"
+PARAMS13 := @DEVICEOPTS@
 
-ifeq (@HAS_CUDA@,TRUE)
-  CC=@CUDA_HOME@/bin/nvcc
-  EXT=$(NVEXT)
-  PARAMS=$(NVPARAMS)
-  OBJS=$(NVOBJS)
-else
-  EXT=$(GCCEXT)
-  PARAMS=$(GCCPARAMS)
-  OBJS=$(GCCOBJS)
-endif
+LIBS :=  -L@CUDA_HOME@@CUDA_LIB_DIR@ @LIBS@ -Xlinker "@R_LIB@ @RPATHFLAG@"
+
+TARGETS := gputools.so
+
+CC := @CUDA_HOME@/bin/nvcc
 
 all: $(TARGETS) 
 
-$(TARGETS): $(OBJS)
-	$(CC) -shared $(PARAMS) $(OBJS) -o $@
+$(TARGETS): $(OBJS) $(OBJS13)
+	$(CC) -shared $(LIBS) $(OBJS) $(OBJS13) -o $@
 
 $(OBJS): %.o: %.$(EXT)
 	$(CC) -c $(PARAMS) $^ -o $@
+
+$(OBJS13): %.o: %.$(EXT)
+	$(CC) -c $(PARAMS13) $(PARAMS) $^ -o $@
 
 clean:
 	rm -rf *o

@@ -31,7 +31,7 @@ gpuMi(x, y = NULL, bins = 2, splineOrder = 1)
 		traditional mutual information.  For splineOrder > 1, a single value
 		may be placed in multiple adjoining bins with varying weights on
 		membership.}
-	\item{splineOrder}{a single interver value giving the degree of the spline
+	\item{splineOrder}{a single integer value giving the degree of the spline
 		polynomials used to define both the number of bins a single value will
 		be placed in and the weight of membership given to the value.}
 }
@@ -51,11 +51,11 @@ gpuMi(x, y = NULL, bins = 2, splineOrder = 1)
 }
 
 \examples{
-	# get 10 random variables each with 100 samples
-	x <- matrix(runif(1000), 100, 10)
-	y <- matrix(runif(1000), 100, 10)
+	# get 3 random variables each with 20 samples
+	x <- matrix(runif(60), 20, 3)
+	y <- matrix(runif(60), 20, 3)
 	# do something interesting
-	y[,2] <- 3.0 * (x[,8] + x[,9])
+	y[,2] <- 3.0 * (x[,1] + x[,3])
 	z <- gpuMi(x, y, bins = 10, splineOrder = 3)
 	print(z)
 }

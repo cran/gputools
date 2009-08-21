@@ -3,17 +3,38 @@
 #include<time.h>
 #include<string.h>
 #include<cublas.h>
+#include<R.h>
 
 #include"cuseful.h"
 
 #define HALF RAND_MAX/2
 
-int fatal(const char * msg) {
-	if(msg != NULL) fputs(msg, stderr);
-	return 0;
-	// exit(EXIT_FAILURE);
+void getComputeNumber(int * major, int * minor) {
+	int currentDevice = 0;
+	struct cudaDeviceProp dProps;
+
+	cudaGetDevice(&currentDevice);
+	cudaGetDeviceProperties(&dProps, currentDevice);
+
+	*major = dProps.major;
+	*minor = dProps.minor;
 }
 
+void checkDoubleCapable(const char * failMsg) {
+	int major, minor;
+	major = minor = 0;
+	getComputeNumber(&major, &minor);
+	if((major < 1) || ((major >= 1) && (minor < 3)))
+		fatal(failMsg);
+}
+
+void fatal(const char * msg) {
+	if(msg != NULL)
+		error(msg);
+	else
+		error("unrecoverable error in compiled C code");
+}
+/*
 void * xmalloc(size_t nbytes) {
     register void * result = malloc(nbytes);
     if(result == 0) fatal("Failed allocating more RAM; maybe out of RAM.");
@@ -46,6 +67,7 @@ size_t * stMalloc(size_t n) {
 	if(vect == NULL) fatal("error allocating host memory\n");
 	return vect;
 }
+*/
 
 float * getMatFromFile(int rows, int cols, const char * fn) {
 	FILE * matFile;
@@ -56,7 +78,7 @@ float * getMatFromFile(int rows, int cols, const char * fn) {
 		sprintf(line, "unable to open file %s", fn);
 		fatal(line);
 	}
-	float * mat = (float *)xmalloc(rows*cols*sizeof(float));
+	float * mat = Calloc(rows*cols, float);
 	int i, j, err;
 	for(i = 0; i < rows; i++) {
 		for(j = 0; j < cols; j++) {
@@ -129,8 +151,9 @@ int hasCudaError(const char * msg) {
 void checkCudaError(const char * msg) {
 	cudaError_t err = cudaGetLastError();
 	if(cudaSuccess != err) {
-		fprintf(stderr, "cuda error : %s : %s\n", msg, cudaGetErrorString(err));
-		fatal(NULL);
+		if(msg != NULL)
+			warning(msg);
+		fatal(cudaGetErrorString(err));
 	}
 }
 

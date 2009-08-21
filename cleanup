@@ -1,3 +1,3 @@
 #!/bin/sh
 
-rm -f config.* src/Makefile src/*o R/*.R
+rm -f config.* src/Makefile src/*o R/gpuSvm.R

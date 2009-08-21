@@ -1,7 +1,7 @@
 gpuSvmTrain <- function(y, x, C = 10, kernelWidth = 0.125, eps = 0.5, 
 	stoppingCrit = 0.001, isRegression = FALSE)
 {
-	if(@SVMDISABLED@) {
+	if(TRUE) {
 		stop("svm functions not implemented in device emulation mode")
 	}
 
@@ -68,7 +68,7 @@ gpuSvmTrain <- function(y, x, C = 10, kernelWidth = 0.125, eps = 0.5,
 gpuSvmPredict <- function(data, supportVectors, svCoefficients, svOffset,
 	kernelWidth = 0.125, isRegression = FALSE)
 {
-	if(@SVMDISABLED@) {
+	if(TRUE) {
 		stop("svm functions not implemented in device emulation mode")
 	}
 
@@ -100,7 +100,7 @@ gpuSvmPredict <- function(data, supportVectors, svCoefficients, svOffset,
 
 getAucEstimate <- function(classes, scores)
 {
-	if(@SVMDISABLED@) {
+	if(TRUE) {
 		stop("svm functions not implemented in device emulation mode")
 	}
 

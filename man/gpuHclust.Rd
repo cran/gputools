@@ -9,22 +9,21 @@
 }
 
 \usage{
-	gpuHclust(distances, method = "single")
+	gpuHclust(distances, method = "complete")
 }
 
 \arguments{
-	\item{distances}{a matrix of floating point numbers whose i, j entry
-		represents the distance between point i and point j.  To use this with
-		the dist function, be sure to generate the whole matrix of distances, 
-		and wrap the output with 'as.matrix'.}
+	\item{distances}{a class of type "dist" containing floating point numbers
+		representing distances between points.  R's native dist function and
+		the gpuDist function produce output of this type.}  
 	\item{method}{a string representing the name of the clustering method to be
 		applied to distances.  Currently supported method names include
 		"average", "centroid", "complete", "flexible", "flexible group", 
 		"mcquitty", "median", "single", "ward", and "wpgma".}
 }
 
-\value{Copied from the native R function 'hclust' documentation.  A list with 
-	the following components.
+\value{Copied from the native R function 'hclust' documentation.  A class of
+	type "hclust" with the following attributes. 
 	\item{merge}{an n-1 by 2 matrix. Row i of 'merge' describes the merging of
 		clusters at step i of the clustering. If an element j in the
 		row is negative, then observation -j was merged at this
@@ -52,8 +51,8 @@ numVectors <- 5
 dimension <- 10
 Vectors <- matrix(runif(numVectors*dimension), numVectors, dimension)
 distMat <- gpuDist(Vectors, "euclidean")
-gpuHclust(distMat, "single")
-gpuHclust(as.matrix(dist(Vectors)), "single")
+myClust <- gpuHclust(distMat, "single")
+plot(myClust)
 }
 
 \keyword{cluster}

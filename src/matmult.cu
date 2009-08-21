@@ -3,6 +3,7 @@
 #include<string.h>
 #include<cublas.h>
 #include<cuseful.h>
+#include<R.h>
 #include<matmult.h>
 
 void gpuMatMult(float * a, int rowsa, int colsa, 
@@ -20,17 +21,17 @@ void gpuMatMult(float * a, int rowsa, int colsa,
 	checkCublasError("gpuMatMult device initialization");
 
 	cublasAlloc(rowsa*colsa, sizeof(float), (void **) &gpua);
+	checkCublasError("gpuMatMult memory allocation");
 	cublasAlloc(rowsb*colsb, sizeof(float), (void **) &gpub);
+	checkCublasError("gpuMatMult memory allocation");
 	cublasAlloc(rowsa*colsb, sizeof(float), (void **) &gpuc);
 	checkCublasError("gpuMatMult memory allocation");
 
 	cublasSetVector(rowsa*colsa, sizeof(float), a, 1, gpua, 1);
 	cublasSetVector(colsa*colsb, sizeof(float), b, 1, gpub, 1);
-	checkCublasError("gpuMatMult write to gpu memory");
 
 	cublasSgemm('N', 'N', rowsa, colsb, colsa, 1.0, gpua, rowsa, gpub, colsa, 
 		0.0, gpuc, rowsa);
-	checkCublasError("gpuMatMult gpu routine execution");
 
 	cublasGetVector(rowsa*colsb, sizeof(float), gpuc, 1, c, 1);
 	checkCublasError("gpuMatMult read from gpu memory");
@@ -68,11 +69,11 @@ void gpu16MatMult(float * a, int rowsa, int colsa,
 	cublasAlloc(bigRowsA*bigColsB, sizeof(float), (void **) &gpuc);
 	checkCublasError("gpu16MatMult memory allocation");
 
-	bigA = (float *) calloc(bigRowsA*bigColsA, sizeof(float));
+	bigA = Calloc(bigRowsA*bigColsA, float);
 	for(int i = 0; i < colsa; i++)
 		memcpy(&bigA[i*bigRowsA], &a[i*rowsa], rowsa*sizeof(float));
 
-	bigB = (float *) calloc(bigRowsB*bigColsB, sizeof(float));
+	bigB = Calloc(bigRowsB*bigColsB, float);
 	for(int i = 0; i < colsb; i++)
 		memcpy(&bigB[i*bigRowsB], &b[i*rowsb], rowsb*sizeof(float));
 
@@ -84,7 +85,7 @@ void gpu16MatMult(float * a, int rowsa, int colsa,
 		gpub, bigRowsB, 0.0, gpuc, bigRowsA);
 	checkCublasError("gpu16MatMult gpu routine execution");
 
-	bigC = (float *) calloc(bigRowsA*bigColsB, sizeof(float));
+	bigC = Calloc(bigRowsA*bigColsB, float);
 	cublasGetVector(bigRowsA*bigColsB, sizeof(float), gpuc, 1, bigC, 1);
 	checkCublasError("gpu16MatMult read from gpu memory");
 
@@ -95,7 +96,7 @@ void gpu16MatMult(float * a, int rowsa, int colsa,
 	cublasFree(gpub);
 	cublasFree(gpuc);
 	cublasShutdown();
-	free(bigA);
-	free(bigB);
-	free(bigC);
+	Free(bigA);
+	Free(bigB);
+	Free(bigC);
 }

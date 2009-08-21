@@ -4,7 +4,8 @@
 
 \description{
 	Given the number of samples and a Pearson correlation coefficient, this 
-	function estimates the t-score on a GPU.
+	function estimates the t-score on a GPU. If an entry in goodPairs is
+	zero or one then you may get a NaN as the t-test result.
 }
 
 \usage{

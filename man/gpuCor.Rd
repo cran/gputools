@@ -12,7 +12,7 @@
 }
 
 \usage{
-	gpuCor(x, y = NULL, method = c("pearson", "kendall"), anyNAs = FALSE) 
+gpuCor(x, y = NULL, use = "everything", method = "pearson")
 }
 
 \arguments{
@@ -20,26 +20,30 @@
 		random variable.}  
 	\item{y}{a matrix of floating point values in which each column is a 
 		random variable.}
+	\item{use}{a string.  A character string giving a method for computing
+		in the presence of missing values. Options are
+		"everything" or "pairwise.complete.obs". This currently only 
+		affects the "pearson" method.}
 	\item{method}{a string.  Either "pearson" or "kendall".}
-	\item{anyNAs}{a logical value.  Set to TRUE to do Pearson's with NAs in 
-		your data set.}
 }
 
 \value{
-	For method "pearson" and anyNAs=TRUE, a list with matrices pairs,
-	coefficients, and ts.  The matrix entry $i$, $j$ for pairs represents
+	For method "pearson", a list with matrices 'pairs',
+	'coefficients', and 'ts'. The matrix entry $i$, $j$ for pairs represents
 	the number of pairs of entries $x_i^k$, $y_j^k$ (the $k$-th entry from
-	$x_i$ and $y_j$ respectively) where neither are NA.  These are the
+	$x_i$ and $y_j$ respectively). These are the
 	number of entries actually used to calculate the coefficients.
-	Entry $i$, $j$ of the coefficients matrix is the correlation coeffcient
-	for $x_i$, $y_j$.  Entry $i$, $j$ of the ts matrix is the t-score of the
-	$i$, $j$ entry of the coefficient matrix.
+	Entry $i$, $j$ of the coefficients matrix is the correlation coefficient
+	for $x_i$, $y_j$. Entry $i$, $j$ of the ts matrix is the t-score of the
+	$i$, $j$ entry of the coefficient matrix. If use="pairwise.complete.obs"
+	then only the pairs where both entries are not NA are used in the
+	computations.
 
-	For method "pearson" and anyNAs=FALSE, a matrix of floating point
-	numbers where entry $i$, $j$ is the correlation coeffcient for $x_i$, $y_j$.
-
-	For method "kendall", a matrix of floating point numbers where entry 
-	$i$, $j$ is the correlation coeffcient for $x_i$, $y_j$.
+	For method "kendall", a list of matrices 'pairs' as above and
+	'coefficients' as follows. The matrix 'coefficients' is a matrix of
+	floating point numbers where entry $i$, $j$ is the correlation coefficient
+	for $x_i$, $y_j$. Calculation of t-scores for the kendall coefficients is
+	not yet implemented.
 }
 
 \seealso{
@@ -52,8 +56,8 @@ numBvars <- 10
 numSamples <- 30
 A <- matrix(runif(numAvars*numSamples), numSamples, numAvars)
 B <- matrix(runif(numBvars*numSamples), numSamples, numBvars)
-gpuCor(A, B, "pearson")
-gpuCor(A, B, "kendall")
+gpuCor(A, B, method="pearson")
+gpuCor(A, B, method="kendall")
 A[3,2] <- NA
-gpuCor(A, B, "pearson", TRUE)
+gpuCor(A, B, use="pairwise.complete.obs", method="pearson")
 }

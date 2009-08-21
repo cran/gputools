@@ -1,5 +1,8 @@
 extern "C" {
-	void rpmcc(const float * samplesA, const int * numSamplesA,
+	// whichObs = 0 means everything
+	// whichObs = 1 means pairwiseComplete
+	void rpmcc(const int * whichObs, const float * samplesA,
+		const int * numSamplesA,
 		const float * samplesB, const int * numSamplesB, 
 		const int * sampleSize, float * numPairs, float * correlations,
 		float * signifs);
@@ -37,11 +40,11 @@ extern "C" {
 		const int * ny, const int * sampleSize, double * answers);
 	void RgpuKendall(const float * X, const int * nx, const float * Y, 
 		const int * ny, const int * sampleSize, double * answers);
-
+/*
 	void dlr(const int * numParams, const int * numObs, const float * obs,
 		float * outcomes, float * coeffs, const float * epsilon, 
 		const float * ridge, const int * maxiter);
-
+*/
 	void rgpuGranger(const int * rows, const int * colsy, const float * y, 
 		const int * p, float * fStats, float * pValues);
 	void rgpuGrangerXY(const int * rows, const int * colsx, const float * x, 
@@ -60,25 +63,19 @@ extern "C" {
 	void RgpuMatMult(float * a, int * rowsa, int * colsa, 
 		float * b, int * rowsb, int * colsb, float * result);
 
-	void R_SVRTrain(float * alpha, float * beta, float * y, float * x,
-		float * C, float * kernelwidth, float * eps, int * m, int * n,
-		float * StoppingCrit, int * numSvs);
-	void R_SVMTrain(float * alpha, float * beta, float * y, float * x,
-		float * C, float * kernelwidth, int * m, int * n, float * StoppingCrit,
-		int * numSvs, int * numPosSvs);
-	void R_produceSupportVectors(int * isRegression, int * m, int * n,
-		int * numSVs, int * numPosSVs, const float * x, const float * y,
-		const float * alphas, float * svCoefficients, float * supportVectors);
-	void R_GPUPredictWrapper(int * m, int * n, int * k, float * kernelwidth,
-		const float * Test, const float * Svs, float * alphas,
-		float * prediction, float * beta, float * isregression);
-	void RgetAucEstimate(int * n, double * classes, double * probs,
-		double * outputAuc);
 
 	void RgetQRDecomp(int * rows, int * cols, float * a, float * q, int * pivot,
 		int * rank);
 	void RqrSolver(int * rows, int * cols, float * matX, float * vectY, 
 		float * vectB);
+
+	void rGetQRDecompPacked(const int * rows, const int * cols,
+		const float * tol, float * x, int * pivot, float * qraux, int * rank);
+
+	void rGetInverseFromQR(const int * rows, const int * cols, const float * q,
+		const float * r, float * inverse);
+	void rSolveFromQR(const int * rows, const int * cols, const float * q,
+		const float * r, const float * y, float * b);
 
 	void rBSplineMutualInfo(int * cols, int * nBins, int * splineOrder,
 		int * rowsA, const float * A, int * rowsB, const float * B, 
@@ -86,6 +83,8 @@ extern "C" {
 	void rBSplineMutualInfoSingle(int * cols,
 		int * nBins, int * splineOrder, int * rows, const float * A,
 		float * mutualInfo);
+
+	void setDevice(int * device);
 }
 
 void formatClustering(const int len, const int * sub,  const int * sup, 

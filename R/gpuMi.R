@@ -1,8 +1,8 @@
 gpuMi <- function(x, y = NULL, bins = 2, splineOrder = 1)
 {
-	if(!@HAS_CUDA@) {
-		warning("unable to find CUDA installation\n\t1.  uninstall package gputools\n\t2.  check that you have installed a CUDA capable driver\n\t3.  check that you have installed the CUDA toolkit correctly\n\t4.  check that the environment variable CUDA_HOME is set to the install location of the CUDA toolkit\n")
-		return()
+	x <- as.matrix(x)
+	if(!is.null(y)) {
+		y <- as.matrix(y)
 	}
 
 	bins <- as.integer(bins)

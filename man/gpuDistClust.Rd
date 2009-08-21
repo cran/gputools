@@ -9,7 +9,7 @@
 }
 
 \usage{
-	gpuDistClust(points, distmethod = "euclidean", clustmethod = "single") 
+	gpuDistClust(points, distmethod = "euclidean", clustmethod = "complete") 
 }
 
 \arguments{
@@ -25,8 +25,8 @@
 		"mcquitty", "median", "single", "ward", and "wpgma".}
 }
 
-\value{Copied from the native R function 'hclust' documentation.  A list with 
-	the following components.
+\value{Copied from the native R function 'hclust' documentation.  A class of
+	type "hclust" with the following attributes. 
 	\item{merge}{an n-1 by 2 matrix. Row i of 'merge' describes the merging of
 		clusters at step i of the clustering. If an element j in the
 		row is negative, then observation -j was merged at this
@@ -53,8 +53,8 @@
 numVectors <- 5
 dimension <- 10
 Vectors <- matrix(runif(numVectors*dimension), numVectors, dimension)
-gpuDistClust(Vectors, "euclidean", "complete")
-gpuDistClust(Vectors, "maximum", "mcquitty")
+myClust <- gpuDistClust(Vectors, "maximum", "mcquitty")
+plot(myClust)
 }
 
 \keyword{cluster}

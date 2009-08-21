@@ -4,12 +4,16 @@
 
 \description{
 	This function estimates the solution to an equation of the form x * b = y
-	where x is a matrix, b is an unkown vector, and y is a known vector.  It
-	does much calculation on a GPU.
+	where x is a matrix, b is an unknown vector, and y is a known vector.  It
+	does much calculation on a GPU. If the y argument is omitted, the
+	function returns the inverse of x.
+
+	The function uses R's base 'qr' and then applies the gpu to the result
+	to get the final solution.
 }
 
 \usage{
-	gpuSolve(x, y)
+	gpuSolve(x, y=NULL)
 }
 
 \arguments{
@@ -18,23 +22,19 @@
 }
 
 \value{
-a vector of floating point numbers of length ncol(x) which is an estimate of
-the b from x * b = y.
-}
-
-\references{
-Bjorck, Ake (1996) \emph{Numerical methods for least squares problems}. SIAM.
+a vector or matrix of floating point numbers. If y is not null,
+then the value is an estimate of the vector b of length ncol(x)
+where x * b = y.  If y is null or omitted, the value is a matrix,
+an estimate of a matrix multiplicative pseudo inverse of x.
 }
 
 \examples{
-	# get some random data of any shape at all
-	x <- matrix(runif(1000), 50, 20)
-	y <- runif(50)
+	x <- matrix(runif(100), 10, 10)
+	y <- runif(10)
 	b <- gpuSolve(x, y)
 	cat("Solution:\n")
 	print(b)
-	cat("x * b\n")
-	print(x \%*\% b)
-	cat("original y\n")
-	print(y)
+	x.inverse <- gpuSolve(x)
+	cat("an estimate of a pseudo inverse for x:\n")
+	print(x.inverse)
 }

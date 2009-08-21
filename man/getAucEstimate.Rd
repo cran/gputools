@@ -3,9 +3,9 @@
 \title{Estimate the AUC of the ROC}
 
 \description{
-	This function give a quick estimate of the area under the curve (AUC)
+	This function gives a quick estimate of the area under the curve (AUC)
 	of the receiver operating characteristic (ROC).  It is a quick way to
-	get some hint at how good a binary classifier is at classifying.  The
+	estimate the quality of a binary classifier. The
 	algorithm is based on a paper by David Hand and Robert Till
 	(see references).
 }

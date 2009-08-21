@@ -4,23 +4,38 @@
 #include<cublas.h>
 
 #include<correlation.h>
+#include<kendall.h>
 #include<distance.h>
 #include<granger.h>
 #include<hcluster.h>
-#include<lr.h>
+/* #include<lr.h> */
 #include<matmult.h>
 #include<classification.h>
 #include<qrdecomp.h>
 #include<mi.h>
 #include<cuseful.h>
+#include<R.h>
 
 #include<rinterface.h>
 
-void rpmcc(const float * samplesA, const int * numSamplesA,
+// whichObs = 0 means everything
+// whichObs = 1 means pairwiseComplete
+void rpmcc(const int * whichObs, const float * samplesA, const int * numSamplesA,
 	const float * samplesB, const int * numSamplesB, const int * sampleSize,
 	float * numPairs, float * correlations, float * signifs)
 {
-	pmcc(samplesA, *numSamplesA, samplesB, *numSamplesB, *sampleSize,
+	UseObs myObs;
+	switch(*whichObs) {
+		case 0:
+			myObs = everything;
+			break;
+		case 1:
+			myObs = pairwiseComplete;
+			break;
+		default:
+			fatal("unknown use method");
+	}
+	pmcc(myObs, samplesA, *numSamplesA, samplesB, *numSamplesB, *sampleSize,
 		numPairs, correlations, signifs);
 }
 
@@ -99,7 +114,7 @@ void RgpuKendall(const float * X, const int * nx, const float * Y,
 {
 	masterKendall(X, *nx, Y, *ny, *sampleSize, answers);
 }
-
+/*
 void dlr(const int * numParams, const int * numObs, const float * obs,
 	float * outcomes, float * coeffs, const float * epsilon, 
 	const float * ridge, const int * maxiter) {
@@ -107,7 +122,7 @@ void dlr(const int * numParams, const int * numObs, const float * obs,
 	logRegression(*numParams, *numObs, obs, outcomes, coeffs, *epsilon, 
 		*ridge, *maxiter);
 }
-
+*/
 void rgpuGranger(const int * rows, const int * cols, const float * y, 
 	const int * p, float * fStats, float * pValues)
 {
@@ -167,16 +182,16 @@ void Rdistclust(const char ** distmethod, const char ** clustmethod,
 	int 
 		* presub, * presup;
 
-	presub = (int *) malloc(len*sizeof(int));
-	presup = (int *) malloc(len*sizeof(int));
+	presub = Calloc(len, int);
+	presup = Calloc(len, int);
 
 	hclusterPreparedDistances(gpuDistances, dpitch, *numPoints, 
 		presub, presup, val, hcmeth, lambda, beta);
 
 	formatClustering(len, presub, presup, merge, order);
 
-	free(presub);
-	free(presup);
+	Free(presub);
+	Free(presup);
 }
 
 void Rdistances(const float * points, const int * numPoints, const int * dim,
@@ -201,16 +216,16 @@ void Rhcluster(const float * distMat, const int * numPoints,
 	int 
 		* presub, * presup;
 
-	presub = (int *) malloc(len*sizeof(int));
-	presup = (int *) malloc(len*sizeof(int));
+	presub = Calloc(len, int);
+	presup = Calloc(len, int);
 
 	hcluster(distMat, pitch, *numPoints, presub, presup, val, nummethod,
 		lambda, beta);
 
 	formatClustering(len, presub, presup, merge, order);
 
-	free(presub);
-	free(presup);
+	Free(presub);
+	Free(presup);
 }
 
 void formatClustering(const int len, const int * sub,  const int * sup, 
@@ -272,43 +287,6 @@ void RgpuMatMult(float * a, int * rowsa, int * colsa,
 	gpuMatMult(a, *rowsa, *colsa, b, *rowsb, *colsb, result);
 }
 
-void R_SVRTrain(float * alpha, float * beta, float * y, float * x, float * C,
-	float * kernelwidth, float * eps, int * m, int * n, float * StoppingCrit,
-	int * numSvs)
-{
-	SVRTrain(alpha, beta, y, x, *C, *kernelwidth, *eps, *m, *n,
-		*StoppingCrit, numSvs);
-}
-
-void R_SVMTrain(float * alpha, float * beta, float * y, float * x, float * C,
-	float * kernelwidth, int * m, int * n, float * StoppingCrit,
-	int * numSvs, int * numPosSvs)
-{
-	SVMTrain(alpha, beta, y, x, *C, *kernelwidth, *m, *n, *StoppingCrit,
-		numSvs, numPosSvs);
-}
-
-void R_GPUPredictWrapper(int * m, int * n, int * k, float * kernelwidth,
-	const float * Test, const float * Svs, float * alphas,
-	float * prediction, float * beta, float * isregression)
-{
-	GPUPredictWrapper(*m, *n, *k, *kernelwidth, Test, Svs, alphas, prediction,
-		*beta, *isregression);
-}
-
-void R_produceSupportVectors(int * isRegression, int * m, int * n, int * numSVs,
-	int * numPosSVs, const float * x, const float * y, const float * alphas,
-	float * svCoefficients, float * supportVectors)
-{
-	getSupportVectors(*isRegression, *m, *n, *numSVs, *numPosSVs, x, y,
-		alphas, svCoefficients, supportVectors);
-}
-
-void RgetAucEstimate(int * n, double * classes, double * probs,
-	double * outputAuc)
-{
-	*outputAuc = getAucEstimate(*n, classes, probs);
-}
 
 void RgetQRDecomp(int * rows, int * cols, float * a, float * q, int * pivot,
 	int * rank)
@@ -374,6 +352,59 @@ void RqrSolver(int * rows, int * cols, float * matX, float * vectY,
 	checkCublasError("RqrSolver: line 93");
 
 	cublasFree(dB);
+}
+
+void rGetQRDecompPacked(const int * rows, const int * cols, const float * tol, float * x, int * pivot,
+	float * qraux, int * rank)
+{
+	float * dQR;
+	cudaMalloc((void **) &dQR, (*rows) * (*cols) * sizeof(float));
+	checkCudaError("rGetQRDecompPacked:");
+
+	cudaMemcpy(dQR, x, (*rows) * (*cols) * sizeof(float),
+		cudaMemcpyHostToDevice);
+
+	getQRDecompPacked(*rows, *cols, *tol, dQR, pivot, qraux, rank);
+
+	cudaMemcpy(x, dQR, (*rows) * (*cols) * sizeof(float),
+		cudaMemcpyDeviceToHost);
+	checkCudaError("rGetQRDecompPacked:");
+	cudaFree(dQR);
+	checkCudaError("rGetQRDecompPacked:");
+}
+
+void rGetInverseFromQR(const int * rows, const int * cols, const float * q, const float * r,
+	float * inverse)
+{
+	float
+		* dQ, * dR, * dInverse;
+
+	cudaMalloc((void **) &dQ, (*rows) * (*cols) * sizeof(float));
+	cudaMalloc((void **) &dR, (*cols) * (*cols) * sizeof(float));
+	cudaMalloc((void **) &dInverse,  (*rows) * (*cols) * sizeof(float));
+	checkCudaError("rGetInverseFromQR:");
+
+	cudaMemcpy(dQ, q, (*rows) * (*cols) * sizeof(float),
+		cudaMemcpyHostToDevice);
+	cudaMemcpy(dR, r, (*cols) * (*cols) * sizeof(float),
+		cudaMemcpyHostToDevice);
+
+	getInverseFromQR(*rows, *cols, dQ, dR, dInverse);
+
+	cudaFree(dQ);
+	cudaFree(dR);
+
+	cudaMemcpy(inverse, dInverse, (*rows) * (*cols) * sizeof(float),
+		cudaMemcpyDeviceToHost);
+	checkCudaError("rGetInverseFromQR:");
+
+	cudaFree(dInverse);
+}
+
+void rSolveFromQR(const int * rows, const int * cols, const float * q, const float * r,
+	const float * y, float * b)
+{
+	solveFromQR(*rows, *cols, q, r, y, b);
 }
 
 void rBSplineMutualInfo(int * cols, int * nBins, int * splineOrder,
