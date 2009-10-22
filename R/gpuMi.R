@@ -8,39 +8,28 @@ gpuMi <- function(x, y = NULL, bins = 2, splineOrder = 1)
 	bins <- as.integer(bins)
 	splineOrder <- as.integer(splineOrder)
 
-	cols <- nrow(x)
-
+	nsamples <- as.integer(nrow(x))
+	na <- as.integer(ncol(x))
 	a <- as.single(x)
-	rowsA <- ncol(x)
+
+	b <- a
+	nb <- na
+	row_labels <- colnames(x)
 
 	if(is.null(y)) {
-		b <- a
-		rowsB <- ncol(x)
+		nb <- as.integer(ncol(x))
+		b <- as.single(x)
+		row_labels <- colnames(x)
 	} else {
+		nb <- as.integer(ncol(y))
 		b <- as.single(y)
-		rowsB <- ncol(y)
+		row_labels <- colnames(y)
 	}
 
-	mutualInfo <- single(rowsB * rowsA)
-
-	if(is.null(y)) {
-		cCall <- .C("rBSplineMutualInfoSingle",
-			cols, bins, splineOrder, rowsA, a,
-			mi = mutualInfo)
-		mutualInfo <- cCall$mi
-	} else {
-		cCall <- .C("rBSplineMutualInfo", cols,
-			bins, splineOrder, rowsA, a, rowsB, b,
-			mi = mutualInfo)
-		mutualInfo <- cCall$mi
-	}
-
-	mutualInfo <- matrix(mutualInfo, rowsB, rowsA)
-	if(is.null(y)) {
-		rownames(mutualInfo) <- colnames(x)
-	} else {
-		rownames(mutualInfo) <- colnames(y)
-	}
-	colnames(mutualInfo) <- colnames(x)
-	return(mutualInfo)
+	mi <- .C("rBSplineMutualInfo", bins, splineOrder, nsamples, na, a, 
+		nb, b, mi = single(nb * na), PACKAGE='gputools')$mi
+	mi <- matrix(mi, nb, na)
+	rownames(mi) <- row_labels
+	colnames(mi) <- colnames(x)
+	return(mi)
 }

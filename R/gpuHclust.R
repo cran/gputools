@@ -18,12 +18,13 @@ gpuDist <- function(points, method = "euclidean", p = 2.0)
 	points <- as.matrix(points)
 	numPoints <- nrow(points)
 
-	a <- .C("Rdistances", PACKAGE = "gputools",
+	a <- .C("Rdistances",
 		as.single(t(points)),
 		as.integer(numPoints),
 		as.integer(ncol(points)),
 		d = single(numPoints * numPoints),
-		method, as.single(p))
+		method, as.single(p),
+		PACKAGE='gputools')
 
 	d <- as.dist(matrix(a$d, numPoints, numPoints))
 	attr(d, "Labels") <- dimnames(points)[[1L]]
@@ -68,13 +69,14 @@ gpuHclust <- function(distances, method = "complete")
 	}
 
 	numpoints <- n
-    a <- .C("Rhcluster", PACKAGE = "gputools",
+    a <- .C("Rhcluster",
 		as.single(as.matrix(distances)),
 		as.integer(numpoints),
 		merge = integer(2*(numpoints-1)),
 		order = integer(numpoints),
 		val = single(numpoints-1),
-		method)
+		method,
+		PACKAGE='gputools')
 
 	merge <- matrix(a$merge, numpoints-1, 2)
 
@@ -120,14 +122,15 @@ gpuDistClust <- function(points, distmethod = "euclidean",
 	points <- as.matrix(points)
 	nump <- nrow(points)
 
-	a <- .C("Rdistclust", PACKAGE = "gputools",
+	a <- .C("Rdistclust",
 		distmethod, clustmethod,
 		as.single(t(points)),
 		as.integer(nump),
 		as.integer(ncol(points)),
 		merge = integer(2*(nump-1)),
 		order = integer(nump),
-		val = single(nump-1))
+		val = single(nump-1),
+		PACKAGE='gputools')
 
 	merge <- matrix(a$merge, nump-1, 2)
 

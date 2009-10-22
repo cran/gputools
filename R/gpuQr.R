@@ -10,32 +10,22 @@ gpuQr <- function(x, tol = 1e-07) {
 
 	mode(x) <- 'single'
 
-	res <- .C("rGetQRDecompPacked",
+	res <- .C("rGetQRDecompRR",
 		as.integer(n),
 		as.integer(p),
-		as.single(tol),
+		as.double(tol),
 		qr = x,
-		pivot = as.integer(1L:p),
-		qraux = single(p),
-		rank = integer(1L)
-	)
+		pivot = as.integer(0L:(p-1)),
+		qraux = double(p),
+		rank = integer(1L),
+		PACKAGE='gputools'
+	)[c('qr', 'pivot', 'qraux', 'rank')]
 
+        res$pivot <- res$pivot + 1
+        
 	if(!is.null(cn <- colnames(x)))
 		colnames(res$qr) <- cn[res$pivot]
 
 	class(res) <- "qr"
 	res
 }
-
-# solve for b: xb = y
-# gpuSolve <- function(x, y)
-# {
-#	x <- as.matrix(x)
-#	y <- as.matrix(y)
-#
-#	m <- nrow(x)
-#	n <- ncol(x)
-#	fcall <- .C("RqrSolver", as.integer(m), as.integer(n), as.single(x), 
-#		as.single(y), solution = single(n))
-#	return(fcall$solution)
-#}

@@ -324,12 +324,12 @@ void qrSolver2(int rows, int cols, float * dX, float * dY, float * dB)
 		* pivot,
 		rank, maxRank = rows > cols ? cols : rows;
 	float
-		* qrAux,
 		* hostIdent,
 		* dQR, * dQ, * drInverse, * dxInverse;
 
+	double * qrAux;
 	pivot = Calloc(cols, int);
-	qrAux = Calloc(maxRank, float);
+	qrAux = Calloc(maxRank, double);
 
 	cublasAlloc(rows * cols, sizeof(float), (void **)&dQR);
 	cublasAlloc(rows * cols, sizeof(float), (void **)&dQ);
@@ -339,7 +339,7 @@ void qrSolver2(int rows, int cols, float * dX, float * dY, float * dB)
 	cublasScopy(rows*cols, dX, 1, dQR, 1);
 	checkCublasError("qrSolver2:");
 
-	getQRDecompPacked(rows, cols, 0.00001, dQR, pivot, qrAux, &rank);
+	getQRDecompRR(rows, cols, 0.00001, dQR, pivot, qrAux, &rank);
 	checkCublasError("qrSolver2:");
 
 	hostIdent = (float *) Calloc(cols * cols, float);
@@ -515,70 +515,104 @@ void qrdecompMGS(int rows, int cols, float * da, float * dq, float * dr,
 	Free(rowR);
 }
 
-// use householder xfrms and column pivoting to get the R factor of the
-// QR decomp of matrix da:  Q*A*P=R, equiv A*P = Q^t * R
 
-__host__ void getQRDecompPacked(int rows, int cols, float tol, float * dQR,
-	int * pivot, float * qrAux, int * rank)
+// Updates the column norms by subtracting the Hadamard-square of the
+// Householder vector.
+//
+// N.B.:  Overflow incurred in computing the square should already have
+// been detected in the original norm construction.
+//
+__global__ void UpdateHHNorms(int cols, float *dV, float *dNorms) {
+// Copyright 2009, Mark Seligman at Rapid Biologics, LLC.  All rights
+// reserved.
+//
+  int colIndex = threadIdx.x + blockIdx.x * blockDim.x;
+  if (colIndex < cols) {
+    float val = dV[colIndex];
+    dNorms[colIndex] -= val * val;
+  }
+}
+
+// Computes the QR decomposition of the matrix residing in "dQR":
+//   Q*A*P=R, equiv A*P = Q^t * R
+//
+// Employes a rank-revealing coulumn pivot, which will differ appreciably
+// from the behavior of R's qr() command.
+//
+__host__ void getQRDecompRR(int rows, int cols, double tol, float * dQR,
+	int * pivot, double * qrAux, int * rank)
 {
+// Copyright 2009, Mark Seligman at Rapid Biologics, LLC.  All rights
+// reserved.
+//
 	int
 		nblocks, nthreads = NTHREADS,
-		nRowBlocks = rows / nthreads,
 		fbytes = sizeof(float),
-		rowsk, colsk,
-		* dMaxIndex, * dPivot;
+		rowsk, colsk;
 	float
 		* dColNorms,
-		* dV, * dw,
-		* zeroes;
-
-	if(nRowBlocks * nthreads < rows)
-		nRowBlocks++;
+		* dV, * dw;
 
 	cublasAlloc(cols, fbytes, (void **) &dColNorms);
-	cublasAlloc(cols, fbytes, (void **) &dPivot);
 	cublasAlloc(rows*cols, fbytes, (void **) &dV);
-	cublasAlloc(rows, fbytes, (void**) &dw);
-	cublasAlloc(1, fbytes, (void **) &dMaxIndex);
-	checkCublasError("getQRDecompPacked:");
+	cublasAlloc(cols, fbytes, (void**) &dw);
+	checkCublasError("getQRDecompRR:");
 
 	// Presets the matrix of Householder vectors, dV, to zero.
-	// This may be unnecessary, if the cublas calls are adapted
-	// to pass the appropriate submatrices.
-
-	zeroes = (float *) Calloc(rows*cols, float);
+	// Padding with zeroes appears to offer better performance than
+	// direct operations on submatrices:  see commented-out section
+	// in the main loop.
+	//
+	float
+		* zeroes = (float *) Calloc(rows*cols, float);
 	cublasSetMatrix(rows, cols, fbytes, zeroes, rows, dV, rows);
 	Free(zeroes);
 
-	checkCublasError("getQRDecompPacked:");
+	checkCublasError("getQRDecompRR:");
 
-	cublasSetVector(cols, sizeof(int), pivot, 1, dPivot, 1);
+	int k;
+	double minElt; // Minimum tolerable diagonal element
+
+	nblocks = cols / nthreads;
+	if(nblocks * nthreads < cols)
+		nblocks++;
+
+	getColNorms<<<nblocks, nthreads>>>(rows, cols, dQR, rows, dColNorms);
 
 	int
-		rowOffs = 0, k;
+		maxRank = rows > cols ? cols : rows;
 	float
-		v1,
-		minElt; // Minimum tolerable diagonal element
+		* pdVdiag = dV, * pdVcol = dV,
+		* pdQRcol = dQR;
 
-	int maxRank = rows > cols ? cols : rows;
-	for(k = 0; k < maxRank; k++, rowOffs += rows) {
-
+	for(k = 0; k < maxRank; k++, pdQRcol  += rows, pdVcol += rows,
+		pdVdiag += (rows + 1))
+	{
 		rowsk = rows - k;
 		colsk = cols - k;
 
-		nblocks = colsk / nthreads;
-		if(nblocks * nthreads < colsk)
-			nblocks++;
+		// Obtains zero-based least index of maximum norm, beginning
+		// at column 'k'.
+		if (colsk > 1) {
+			int
+				idx = cublasIsamax(colsk, dColNorms + k, 1) + k - 1;
+			if (idx != k) {
+				cublasSswap(1, dColNorms + k, 1, dColNorms + idx, 1);
+				cublasSswap(rows, pdQRcol, 1, dQR + idx * rows, 1);
 
-		getColNorms<<<nblocks, nthreads>>>(rowsk, colsk, dQR + rowOffs, rows,
-			dColNorms);
-		gpuFindMax<<<1, nblocks>>>(colsk, dColNorms, nthreads, dMaxIndex);
-		gpuSwapCol<<<nRowBlocks, nthreads>>>(rows, dQR, k, dMaxIndex, dPivot);
+				int
+					tempIdx = pivot[idx];
+
+				pivot[idx] = pivot[k];
+				pivot[k] = tempIdx;
+			}
+		}
 
 		// Places nonzero elements of V into subdiagonal, although
 		// leading element scaled and placed in qrAux.
 		//
-		cublasScopy(rowsk, dQR + rowOffs + k, 1, dV + rowOffs + k, 1);
+		cublasScopy(rowsk, pdQRcol + k, 1, pdVdiag, 1);
+
 
 		// This should probably be moved to the device.
 		//
@@ -590,58 +624,78 @@ __host__ void getQRDecompPacked(int rows, int cols, float tol, float * dQR,
 		//
 		// N.B.:  pivoting is not a foolproof way to compute rank, however.
 		//
-		*rank = k + 1;
-		cublasGetVector(1, fbytes, dV + rowOffs + k, 1, &v1, 1);
+		// Tolerance should be positve.
+		//
+		float
+			normV = cublasSnrm2(rowsk, pdVdiag, 1);
 
 		if (k == 0) {
-			if (abs(v1) < tol) {
+			if (normV < tol) {
 				*rank = 0;
 				break;
 			} else
-				minElt = abs((1.f + v1) * tol);
-		} else if (abs(v1) < minElt)
+				minElt = tol * (1.0 + normV);
+		} else if (normV < minElt)
 			break;
+
+		*rank = k + 1;
 
 		// Builds Householder vector from maximal column just copied.
 		// For now, uses slow memory transfers to modify leading element:
 		//      V_1 += sign(V_1) * normV.
 
-		float
-			normV = cublasSnrm2(rowsk, dV + rowOffs + k, 1),
-			adjust = v1 >= 0 ? normV  : -normV;
+		float v1;
+		cublasGetVector(1, fbytes, pdVdiag, 1, &v1, 1);
 
-		qrAux[k] = 1.f + v1 / adjust;
+		double
+			v1Abs = fabs(v1);
 
-		v1 += adjust;
-		cublasSetVector(1, fbytes, &v1, 1, dV + rowOffs + k, 1);
+		if (rowsk > 1) {  // Scales leading nonzero element of vector.
+			double
+				fac = 1.0 + normV / v1Abs;
+			double recipNormV = 1.0 / normV;
+		        qrAux[k] = 1.0 + v1Abs * recipNormV;
 
-		// Beta = -2 v^t v
+         		cublasSscal(1, (float) fac, pdVdiag, 1);
+		  
+			// Beta = -2 v^t v :  updates squared norm on host side.
 
-		normV = cublasSdot(rowsk, dV + rowOffs + k, 1, dV + rowOffs +	k, 1);	
+			double beta = -2.0 / (normV*normV + v1Abs * v1Abs * (-1.0 + fac * fac));
 
-		// w = Beta R^t v
+			// w = Beta R^t v
 
-		cublasSgemv('T', rows, cols, -2.f / normV, dQR, rows, dV + rowOffs, 1,
-			0.f, dw, 1);
+			cublasSgemv('T', rows, cols, (float) beta, dQR, rows, pdVcol, 1,
+				0.f, dw, 1);
+				       
+			// R = R + v w^t
 
-		// R = R + v w^t
+			cublasSger(rows, cols, 1.0f, pdVcol, 1, dw, 1, dQR, rows);
 
-		cublasSger(rows, cols, 1.0f, dV + rowOffs, 1, dw, 1, dQR, rows);
+			// Subdiagonal of V scaled by reciprocal of original signed norm.
 
-		// V /= adjust for packed output.
+			float
+				scale = (v1 >= 0.f ? 1.f : -1.f) * recipNormV;
+			cublasSscal(rowsk - 1, scale, pdVdiag + 1, 1);
 
-		cublasSscal(rowsk, 1 / adjust, dV + rowOffs + k, 1);
+			// Updates norms of remaining columns.
 
-		checkCublasError("getQRDecompPacked:");
-		checkCudaError("getQRDecompPacked:");
+			UpdateHHNorms<<<nblocks, nthreads>>>(colsk - 1, pdVdiag + 1,
+				dColNorms + k + 1);
+		}
+		else
+		  qrAux[k] = v1Abs;  // The bottom row is not scaled
+
+		checkCublasError("getQRDecompRR:");
+		checkCudaError("getQRDecompRR:");
 	}
 
 	// Copies the adjusted lower subdiagonal elements into dQR.
 
-	int offs = 1;
-	for (k = 0; k < *rank; k++, offs += (rows + 1)) {
+	int
+		offs = 1;
+
+	for (k = 0; k < *rank; k++, offs += (rows + 1))
 		cublasScopy(rows - k - 1, dV + offs, 1, dQR + offs, 1);
-	}
 
 	// dQR now contains the upper-triangular portion of the factorization,
 	// R.
@@ -651,11 +705,225 @@ __host__ void getQRDecompPacked(int rows, int cols, float tol, float * dQR,
 	// written onto QR.
 
 	cublasFree(dV);
+	cublasFree(dw);
 	cublasFree(dColNorms);
-	cublasFree(dMaxIndex);
+	
+	checkCublasError("getQRDecompRR:");
+}
 
-	cublasGetVector(cols, sizeof(int), dPivot, 1, pivot, 1);
-	cublasFree(dPivot);
+// use householder xfrms and column pivoting to get the R factor of the
+// QR decomp of matrix da:  Q*A*P=R, equiv A*P = Q^t * R
+//
+__host__ void getQRDecompBlocked(int rows, int cols, double tol, float * dQR,
+	int blockSize, int stride, int * pivot, double * qrAux, int * rank)
+{
+// Copyright 2009, Mark Seligman at Rapid Biologics, LLC.  All rights
+// reserved.
+//
 
-	checkCublasError("getQRDecompPacked:");
+  int
+		nblocks, nthreads = NTHREADS,
+		fbytes = sizeof(float),
+		rowsk = stride, // # unprocessed rows = stride - k
+		colsk = cols,   // # unprocessed columns = cols - k
+		maxCol = cols - 1,  // Highest candidate column:  not fixed.
+		k = 0; // Number of columns processed.
+  const int maxRow = rows - 1;
+  float
+		* dV, * dW, *du, *dWtR, *dT, *dColNorms;
+
+  checkCublasError("getQRDecompBlocked:");
+
+    nblocks = cols / nthreads;
+    if(nblocks * nthreads < cols)
+      nblocks++;
+
+    // Presets the matrix of Householder vectors, dV, to zero.
+    // Padding with zeroes appears to offer better performance than
+    // direct operations on submatrices:  aligned access helps
+    // ensure coalescing.
+    //
+    cublasAlloc(stride * blockSize, fbytes, (void**) &dV);
+    cublasAlloc(stride * blockSize, fbytes, (void**) &dW);
+    cublasAlloc(blockSize * blockSize, fbytes, (void**) &dT);
+    cublasAlloc(stride, fbytes, (void**) &du);
+    cublasAlloc(blockSize * (cols - blockSize), fbytes, (void**) &dWtR);
+    cublasAlloc(cols, fbytes, (void**) &dColNorms);
+
+    checkCublasError("getQRDecompBlocked:");
+
+    // Obtains the highest valued norm in order to approximate a condition-
+    // based lower bound, "minElt".
+    //
+    getColNorms<<<nblocks, nthreads>>>(rows, cols, dQR, stride, dColNorms);
+    int maxIdx = cublasIsamax(cols, dColNorms, 1)-1;
+    float maxNorm = cublasSnrm2(rows, dQR + stride * maxIdx, 1);
+    int rk = 0; // Local value of rank;
+    int maxRank;
+    double minElt; // Lowest acceptable norm under given tolerance.
+
+    if (maxNorm < tol)
+      maxRank = 0; // Short-circuits the main loop
+    else {
+      minElt = (1.0 + maxNorm) * tol;
+      maxRank = rows > cols ? cols : rows;
+    }
+
+    float * pdQRBlock = dQR;
+
+    int blockCount = (cols + blockSize - 1) / blockSize;
+    for (int bc = 0; bc < blockCount; bc++) {
+      // Determines "blockEnd", which counts the number of columns remaining
+      // in the upcoming block.  Swaps trivial columns with the rightmost
+      // unvisited column until either a nontrivial column is found or all
+      // columns have been visited.  Note that 'blockEnd <= blockSize', with
+      // inequality possible only in the rightmost processed block.
+      //
+      // This pivoting scheme does not attempt to order columns by norm, nor
+      // does it recompute norms altered by the rank-one update within the
+      // upcoming block.  A higher-fidelity scheme is implemented in the non-
+      // blocked form of this function.  Sapienti sat.
+      //
+      int blockEnd = 0;
+      for (int i = k; i < k + blockSize && i < maxRank && i <= maxCol; i++) {
+        float colNorm = cublasSnrm2(rows, dQR + i * stride, 1);
+	while ( (colNorm < minElt) && (maxCol > i)) {
+	    cublasSswap(rows, dQR + i * stride, 1, dQR + maxCol*stride, 1);
+	    int tempIdx = pivot[maxCol];
+	    pivot[maxCol] = pivot[i];
+	    pivot[i] = tempIdx;
+	    maxCol--;
+	    colNorm = cublasSnrm2(rows, dQR + i * stride, 1);
+        }
+	if (colNorm >= minElt)
+	  blockEnd++;
+      }
+      rk += blockEnd;
+      float scales[blockSize];
+      double Beta[blockSize];
+
+      cudaMemset2D(dV, blockSize * fbytes, 0.f, blockSize * fbytes, rowsk);
+
+      float *pdVcol = dV;
+      float *pdVdiag = dV;
+      float *pdQRdiag = pdQRBlock;
+
+      for (int colIdx = 0; colIdx < blockEnd; colIdx++, pdVcol += rowsk, pdVdiag += (rowsk + 1),
+           pdQRdiag += (stride + 1), k++) {
+
+	cublasScopy(rowsk - colIdx, pdQRdiag, 1, pdVdiag, 1);
+
+	// Builds Householder vector from maximal column just copied.
+	// For now, uses slow memory transfers to modify leading element:
+	//      V_1 += sign(V_1) * normV.
+	//
+	float v1;	  
+	cublasGetVector(1, fbytes, pdVdiag, rowsk + 1, &v1, 1);
+	double v1Abs = fabs(v1);
+	if (k == maxRow) // The bottom row is not scaled.
+	  qrAux[k] = v1Abs;
+	else { // zero-valued "normV" should already have been ruled out.
+	  float normV = cublasSnrm2(rowsk - colIdx, pdQRdiag, 1);
+	  double recipNormV = 1.0 / normV;
+	  qrAux[k] = 1.0 + v1Abs * recipNormV;
+  	  scales[colIdx] = (v1 >= 0.f ? 1.f : -1.f) * recipNormV;
+
+          // Scales leading nonzero element of vector.
+	  //
+	  double fac = 1.0 + normV / v1Abs;
+	  cublasSscal(1, (float) fac, pdVdiag, 1);
+		  
+	  // Beta = -2 v^t v :  updates squared norm on host side.
+	  //
+	  Beta[colIdx] = -2.0 / (normV*normV + v1Abs * v1Abs * (-1.0 + fac * fac));
+
+	  // Rank-one update of the remainder of the block, "B":
+	  // u = Beta B^t v
+	  //
+	  cublasSgemv('T', rowsk, min(blockSize,colsk), (float) Beta[colIdx], pdQRBlock, stride, pdVcol, 1, 0.f, du, 1);
+				       
+          // B = B + v u^t
+	  //
+	  cublasSger(rowsk, min(blockSize,colsk), 1.0f, pdVcol, 1, du, 1, pdQRBlock,
+	  	  stride);
+	}
+      }
+
+      // If more unseen columns remain, updates the remainder of QR lying to
+      // the right of the block just updated.  This must be done unless we
+      // happen to have exited the inner loop without having applied any
+      // Householder transformations (i.e., blockEnd == 0).
+      //
+      if (bc < blockCount - 1 && blockEnd > 0) {
+	 // w_m = Beta (I + W V^t) v_m, where the unsubscripted matrices
+	 // refer to those built at step 'i-1', having 'i' columns.
+	 //
+	 // w_i = Beta v_i
+	 //
+	 //  T = V^t V
+	 //
+         cublasSsyrk('U', 'T', blockSize, rowsk, 1.f, dV, rowsk, 0.f, dT, blockSize);
+
+	 float *pdTcol = dT;
+	 float *pdWcol = dW;
+	 pdVcol = dV;
+	 for (int m = 0; m < blockSize; m++, pdWcol += rowsk, pdVcol += rowsk, pdTcol += blockSize) {
+	   cublasScopy(rowsk, pdVcol, 1, pdWcol, 1);
+           cublasSscal(rowsk, Beta[m], pdWcol, 1);
+	   // w_m = w_m + Beta W T(.,m)
+	   //
+	   if (m > 0) {
+	     cublasSgemv('N', rowsk, m, Beta[m], dW, rowsk, pdTcol, 1, 1.f, pdWcol, 1);
+	   }
+	 }
+
+	 // Updates R, beginning at current diagonal by:
+	 //   R = (I_m + V W^t) R = R + V (W^t R)
+	 //
+
+	 // WtR = W^t R
+	 //
+	 cublasSgemm('T','N', blockSize, colsk - blockSize, rowsk, 1.f, dW, rowsk, 
+	    pdQRBlock + blockSize * stride, stride, 0.f, dWtR, blockSize);
+
+	 // R = V WtR + R
+	 //
+	 cublasSgemm('N', 'N', rowsk, colsk - blockSize, blockSize, 1.f, dV,
+	       rowsk, dWtR, blockSize, 1.f, pdQRBlock+ blockSize * stride, stride);
+     }
+
+      // Flushes scaled Householder vectors to the subdiagonals of dQR,
+      // 'blockSize'-many at a time.  The only time a smaller number are
+      // sent occurs when a partial block remains at the right end.
+      //
+      pdVdiag = dV;
+      pdQRdiag = pdQRBlock;
+      for (int l = 0; l < blockEnd; l++, pdVdiag += (rowsk + 1), pdQRdiag += (stride + 1)) {
+	cublasSscal(rowsk - (l + 1), scales[l], pdVdiag + 1, 1);
+	cublasScopy(rowsk - (l + 1), pdVdiag + 1, 1, pdQRdiag + 1, 1);
+      }
+
+      pdQRBlock += blockSize * (stride + 1);
+      colsk -= blockSize;
+      rowsk -= blockSize;
+    }
+
+    *rank = rk;	
+    checkCublasError("getQRDecompBlocked:");
+    checkCudaError("getQRDecompBlocked:");
+     
+    // dQR now contains the upper-triangular portion of the factorization,
+    // R.
+    // dV is lower-triangular, and contains the Householder vectors, from
+    // which the Q portion can be derived.  An adjusted form of the
+    // diagonal is saved in qrAux, while the sub-diagonal portion is
+    // written onto QR.
+
+    cudaFree(dT);
+    cudaFree(dV);
+    cudaFree(dW);
+    cudaFree(du);
+    cudaFree(dWtR);
+
+    checkCublasError("getQRDecompBlocked:");
 }

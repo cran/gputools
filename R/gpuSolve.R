@@ -18,7 +18,8 @@ gpuSolve <- function(x, y=NULL) {
 		myCall <- .C("rGetInverseFromQR",
 			as.integer(n), as.integer(p),
 			as.single(x.q), as.single(x.r),
-			inverse = single(n * p)
+			inverse = single(n * p),
+			PACKAGE='gputools'
 		)
 		x.inverse <- matrix(myCall$inverse, p, n)
 		return(x.inverse)
@@ -30,7 +31,8 @@ gpuSolve <- function(x, y=NULL) {
 		myCall <- .C("rSolveFromQR",
 			as.integer(n), as.integer(p),
 			as.single(x.q), as.single(x.r),
-			y, solution = single(p)
+			y, solution = single(p),
+			PACKAGE='gputools'
 		)
 		return(myCall$solution)
 	}

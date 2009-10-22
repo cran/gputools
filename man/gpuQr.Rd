@@ -6,6 +6,9 @@
 	gpuQR estimates the QR decomposition for a matrix using
 	column pivoting and householder matrices.  The work is done on a
 	GPU.
+
+	Note:  a rank-revealing pivoting scheme is employed, potentially
+	resulting in pivot distinctly different from ordinary "qr".
 }
 
 \usage{
@@ -36,9 +39,23 @@ the actual rank of the matrix x and so is only an estimation.
 The attribute pivot contains the permutation applied to columns of x
 in the process of calculating the QR decomposition.
 }
+\author{
+The low--level implementation of this function for Nvidia's
+CUDA--supporting GPGPUs was written
+by Mark Seligman at Rapid Biologics LLC.  
+	\code{http://www.rapidbiologics.com}
+  }
 
 \references{
-Bjorck, Ake (1996) \emph{Numerical methods for least squares problems}. SIAM.
+  Bischof, C. B. and Van Loan, C. F. (1987)
+  The WY Representation for Products of Householder Matrices
+  \emph{SIAM J Sci. and Stat. Comp}, \bold{8}, s2--s13.
+
+Bjorck, Ake (1996) \emph{Numerical methods for least squares
+  problems}. SIAM.
+
+Golub, Gene H. and Van Loan, C. F. (1996)
+ \emph{Matrix Computations}, \bold{Ed. 3}, ch. 5.
 }
 
 \examples{

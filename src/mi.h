@@ -1,7 +1,2 @@
-void bSplineMutualInfo(int cols, int nBins, int splineOrder,
-	int rowsA, const float * A, int rowsB, const float * B, 
-	float * mutualInfo);
-
-void bSplineMutualInfoSingle(int cols,
-	int nBins, int splineOrder, int rows, const float * A,
-	float * mutualInfo);
+void bSplineMutualInfo(int nbins, int order, int nsamples, int nx,
+	const float * x, int ny, const float * y, float * out_mi);

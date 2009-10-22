@@ -9,6 +9,7 @@ contents
 + your cuda install is not in /usr/local/cuda
 + mac os x systems
 + windows systems
++ cula
 
 ========
 + notes
@@ -35,6 +36,15 @@ You can get the video driver from
 http://www.nvidia.com/object/cuda_get.html
 
 also.
+
+For exotic R installs, the following configure arguments may help:
+--with-r-lib=<location of R shared libraries>
+--with-r-include=<location of R header files>
+
+As far as compatibility goes, Windows is not supported. Neither is OS X 10.6.
+Rumor has it that the source package does work with the 32bit build of R under
+OS X 10.6. The source package does not support Mac dynamic libraries, so you
+may have trouble with certain Mac versions of CULA.
 
 =========================
 + machines w/ older gpus
@@ -106,3 +116,14 @@ the maintainer.
 There is no support for Windows yet. If you would like to write a windows port,
 please feel free. You are welcome to email it to the maintainer for merging
 with the main package, but only if you want to.
+
+========
++ cula
+========
+
+Since version 0.1-4, gputools supports the use of the CULA library from
+http://www.culatools.com
+
+If you install CULA to a directory other than '/usr/local/cula' you'll want to adjust the CULA_HOME variable similar to CUDA_HOME mentioned above.
+
+Also, on linux machines, please remove the cuda library directory from your LD_LIBRARY_PATH environment variable. Make sure it has the cula library directory instead!

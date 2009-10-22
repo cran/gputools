@@ -13,6 +13,7 @@
 #include<classification.h>
 #include<qrdecomp.h>
 #include<mi.h>
+#include<lsfit.h>
 #include<cuseful.h>
 #include<R.h>
 
@@ -354,23 +355,23 @@ void RqrSolver(int * rows, int * cols, float * matX, float * vectY,
 	cublasFree(dB);
 }
 
-void rGetQRDecompPacked(const int * rows, const int * cols, const float * tol, float * x, int * pivot,
-	float * qraux, int * rank)
+void rGetQRDecompRR(const int * rows, const int * cols, const double * tol, float * x, int * pivot,
+	double * qraux, int * rank)
 {
 	float * dQR;
 	cudaMalloc((void **) &dQR, (*rows) * (*cols) * sizeof(float));
-	checkCudaError("rGetQRDecompPacked:");
+	checkCudaError("rGetQRDecompRR:");
 
 	cudaMemcpy(dQR, x, (*rows) * (*cols) * sizeof(float),
 		cudaMemcpyHostToDevice);
 
-	getQRDecompPacked(*rows, *cols, *tol, dQR, pivot, qraux, rank);
+	getQRDecompRR(*rows, *cols, *tol, dQR, pivot, qraux, rank);
 
 	cudaMemcpy(x, dQR, (*rows) * (*cols) * sizeof(float),
 		cudaMemcpyDeviceToHost);
-	checkCudaError("rGetQRDecompPacked:");
+	checkCudaError("rGetQRDecompRR:");
 	cudaFree(dQR);
-	checkCudaError("rGetQRDecompPacked:");
+	checkCudaError("rGetQRDecompRR:");
 }
 
 void rGetInverseFromQR(const int * rows, const int * cols, const float * q, const float * r,
@@ -407,17 +408,25 @@ void rSolveFromQR(const int * rows, const int * cols, const float * q, const flo
 	solveFromQR(*rows, *cols, q, r, y, b);
 }
 
-void rBSplineMutualInfo(int * cols, int * nBins, int * splineOrder,
+void rBSplineMutualInfo(int * nBins, int * splineOrder, int * nsamples,
 	int * rowsA, const float * A, int * rowsB, const float * B, 
 	float * mutualInfo)
 {
-	bSplineMutualInfo(*cols, *nBins, *splineOrder,
-		*rowsA, A, *rowsB, B, mutualInfo);
+	bSplineMutualInfo(*nBins, *splineOrder, *nsamples, *rowsA, A, *rowsB, B,
+		mutualInfo);
 }
 
-void rBSplineMutualInfoSingle(int * cols,
-	int * nBins, int * splineOrder, int * rows, const float * A,
-	float * mutualInfo)
+// Interface for R functions requiring least-squares computations.
+//
+void RgpuLSFit(float *X, int *n, int *p, float *Y, int *nY,
+	   double *tol, float *coeffs, float *resids, float *effects,
+	   int *rank, int *pivot, double * qrAux, int useSingle)
 {
-	bSplineMutualInfoSingle(*cols, *nBins, *splineOrder, *rows, A, mutualInfo);
+  if (useSingle) {
+    gpuLSFitF(X, *n, *p, Y, *nY, *tol, coeffs, resids, effects,
+      rank, pivot, qrAux);
+  }
+  else {
+//    gpuLSFitD(X, *n, *p, Y, *nY, *tol, coeffs, resids, effects, rank, pivot, qrAux);
+  }    
 }

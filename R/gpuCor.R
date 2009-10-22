@@ -1,5 +1,4 @@
-gpuCor <- function(x, y = NULL, use = "everything", method = "pearson")
-{
+gpuCor <- function(x, y = NULL, use = "everything", method = "pearson") {
 	x <- as.matrix(x)
 	nx <- ncol(x)
 	size <- nrow(x)
@@ -32,10 +31,11 @@ gpuCor <- function(x, y = NULL, use = "everything", method = "pearson")
 	}
 
 	if(methods[method] == "pearson") {
-		answer <- .C("rpmcc", NAOK=TRUE, PACKAGE="gputools",
+		answer <- .C("rpmcc", NAOK=TRUE,
 			as.integer(use - 1), as.single(x), as.integer(nx),
 			as.single(y), as.integer(ny), as.integer(size),
-			pairs = single(n), corr = single(n), ts = single(n))
+			pairs = single(n), corr = single(n), ts = single(n),
+			PACKAGE='gputools')
 
 		pairs <- t(matrix(answer$pairs, ny, nx))
 		corr <- t(matrix(answer$corr, ny, nx))
@@ -49,9 +49,9 @@ gpuCor <- function(x, y = NULL, use = "everything", method = "pearson")
 			warning("NA handling for Kendall's is not yet supported. Defaulting to using everything. Sorry for any inconvenience.")
 		}
 
-		a <- .C("RgpuKendall", PACKAGE = "gputools",
+		a <- .C("RgpuKendall",
 			as.single(x), nx, as.single(y), ny, 
-			size, result = double(nx*ny))
+			size, result = double(nx*ny), PACKAGE = "gputools")
 
 		pairs <- matrix(size, nx, ny)
 		return(list(coefficients = matrix(a$result, nx, ny), pairs = pairs))
@@ -60,16 +60,16 @@ gpuCor <- function(x, y = NULL, use = "everything", method = "pearson")
 	}
 }
 
-gpuTtest <- function(goodPairs, coeffs)
-{
+gpuTtest <- function(goodPairs, coeffs) {
 	goodPairs <- as.single(goodPairs)
 	coeffs <- as.single(coeffs)
 
 	n <- as.integer(length(goodPairs))
 
-	.C("rtestT", NAOK = TRUE, PACKAGE = "gputools",
+	.C("rtestT", NAOK = TRUE,
 		goodPairs, coeffs, n,
-		results = single(n))$results
+		results = single(n),
+		PACKAGE = 'gputools')$results
 }
 
 #gpuSignifFilter <- function(olddata) {

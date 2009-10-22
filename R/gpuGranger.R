@@ -16,15 +16,17 @@ gpuGranger <- function(x, y=NULL, lag)
 
 	if(is.null(y)) {
 		colsy <- colsx
-		cRetVal <- .C("rgpuGranger", PACKAGE = "gputools", 
+		cRetVal <- .C("rgpuGranger",
 			as.integer(rows), as.integer(colsx), as.single(x), lag, 
-			fStats = single(colsx*colsy), pValues = single(colsx*colsy))
+			fStats = single(colsx*colsy), pValues = single(colsx*colsy),
+			PACKAGE='gputools')
 	} else {
 		colsy <- ncol(y)
-		cRetVal <- .C("rgpuGrangerXY", PACKAGE = "gputools", 
+		cRetVal <- .C("rgpuGrangerXY",
 			as.integer(rows), as.integer(colsx), as.single(x), 
 			as.integer(colsy), as.single(y), lag, 
-			fStats = single(colsx*colsy), pValues = single(colsx*colsy))
+			fStats = single(colsx*colsy), pValues = single(colsx*colsy),
+			PACKAGE='gputools')
 	}
 	fStats <- matrix(cRetVal$fStats, colsx, colsy)
 	pValues <- matrix(cRetVal$pValues, colsx, colsy)

@@ -1529,8 +1529,8 @@ void GPUPredictWrapper(int m, int n, int k, float kernelwidth,
 
     for(int j = 0; j < m; j++) {
         prediction[j]+=beta;
-        if(isregression != 1)
-			prediction[j] = prediction[j]<0?-1.0:1.0;
+        if(isregression != 1.f)
+			prediction[j] = (prediction[j] < 0)? -1.0:1.0;
     }
 
     cudaThreadSynchronize();

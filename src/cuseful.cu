@@ -9,7 +9,13 @@
 
 #define HALF RAND_MAX/2
 
-void getComputeNumber(int * major, int * minor) {
+void fatal(const char * msg)
+{
+	error(msg);
+}
+
+void getComputeNumber(int * major, int * minor)
+{
 	int currentDevice = 0;
 	struct cudaDeviceProp dProps;
 
@@ -20,75 +26,28 @@ void getComputeNumber(int * major, int * minor) {
 	*minor = dProps.minor;
 }
 
-void checkDoubleCapable(const char * failMsg) {
+void checkDoubleCapable(const char * failMsg)
+{
 	int major, minor;
 	major = minor = 0;
 	getComputeNumber(&major, &minor);
 	if((major < 1) || ((major >= 1) && (minor < 3)))
-		fatal(failMsg);
+		error(failMsg);
 }
 
-void fatal(const char * msg) {
-	if(msg != NULL)
-		error(msg);
-	else
-		error("unrecoverable error in compiled C code");
-}
-/*
-void * xmalloc(size_t nbytes) {
-    register void * result = malloc(nbytes);
-    if(result == 0) fatal("Failed allocating more RAM; maybe out of RAM.");
-    return result;
-}
-
-float * fMalloc(size_t numElts)
+float * getMatFromFile(int rows, int cols, const char * fn)
 {
-	float * result;
-
-	result = NULL;
-	result = (float *) malloc(numElts*sizeof(float));
-	if(result == NULL) fatal("error allocating host memory\n");
-	return result;
-}
-
-double * dMalloc(size_t numElts)
-{
-	double * result;
-
-	result = NULL;
-	result = (double *) malloc(numElts*sizeof(double));
-	if(result == NULL) fatal("error allocating host memory\n");
-	return result;
-}
-
-size_t * stMalloc(size_t n) {
-	size_t * vect = NULL;
-	vect = (size_t *)malloc(n*sizeof(size_t));
-	if(vect == NULL) fatal("error allocating host memory\n");
-	return vect;
-}
-*/
-
-float * getMatFromFile(int rows, int cols, const char * fn) {
 	FILE * matFile;
 	matFile = fopen(fn, "r");
-	if(matFile == NULL) {
-		size_t length = 32+strlen(fn);
-		char line[length];
-		sprintf(line, "unable to open file %s", fn);
-		fatal(line);
-	}
+	if(matFile == NULL)
+		error("unable to open file %s", fn);
 	float * mat = Calloc(rows*cols, float);
 	int i, j, err;
 	for(i = 0; i < rows; i++) {
 		for(j = 0; j < cols; j++) {
 			err = fscanf(matFile, " %f ", mat+i+j*rows);
-			if(err == EOF) {
-				size_t length = 32+strlen(fn);
-				char line[length];
-				sprintf(line, "file %s incorrect: formatting or size", fn);
-				fatal(line);
-			}
+			if(err == EOF)
+				error("file %s incorrect: formatting or size", fn);
 		}
 		fscanf(matFile, " \n ");
 	}
@@ -101,18 +60,18 @@ char * getTime() {
 	struct tm *loctime;
 	curtime = time(NULL);
 	loctime = localtime(&curtime);
-	
+
 	return asctime(loctime);
 }
 
 void printVect(int n, const float * vect, const char * msg) {
 	if(msg != NULL) puts(msg);
 	for(int i = 0; i < n; i++) {
-		printf("%6.4f, ", vect[i]);
-		if((i+1)%10 == 0) printf("\n");
+		Rprintf("%6.4f, ", vect[i]);
+		if((i+1)%10 == 0) Rprintf("\n");
 	}
-	if(n%10 != 0) printf("\n");
-	if(msg != NULL) puts("----------");
+	if(n%10 != 0) Rprintf("\n");
+	if(msg != NULL) Rprintf("----------\n");
 }
 
 void printMat(int rows, int cols, const float * mat, const char * msg) {
@@ -120,7 +79,7 @@ void printMat(int rows, int cols, const float * mat, const char * msg) {
 	if(msg != NULL) puts(msg);
 	for(i = 0; i < rows; i++)
 		printVect(cols, mat+i*cols, NULL);
-	if(msg != NULL) puts("----------");
+	if(msg != NULL) Rprintf("----------\n");
 }
 
 void getRandVect(float * vect, size_t n) {
@@ -138,14 +97,10 @@ void getBernVect(float * vect, size_t n) {
 }
 
 int hasCudaError(const char * msg) {
-	int hasError = 0; 
 	cudaError_t err = cudaGetLastError();
-	if(cudaSuccess != err) {
-		fprintf(stderr, "cuda error : %s : %s\n", msg, cudaGetErrorString(err));
-		fatal(NULL);
-		hasError = 1;
-	}
-	return hasError;
+	if(cudaSuccess != err)
+		error("cuda error : %s : %s\n", msg, cudaGetErrorString(err));
+	return 0;
 }
 
 void checkCudaError(const char * msg) {
@@ -153,7 +108,7 @@ void checkCudaError(const char * msg) {
 	if(cudaSuccess != err) {
 		if(msg != NULL)
 			warning(msg);
-		fatal(cudaGetErrorString(err));
+		error(cudaGetErrorString(err));
 	}
 }
 
@@ -185,22 +140,14 @@ char * cublasGetErrorString(cublasStatus err)
 void checkCublasError(const char * msg)
 {
 	cublasStatus err = cublasGetError();
-	if(err != CUBLAS_STATUS_SUCCESS) {
-		fprintf(stderr, "cublas error : %s : %s\n", msg, 
-			cublasGetErrorString(err));
-		fatal(NULL);
-	}
+	if(err != CUBLAS_STATUS_SUCCESS)
+		error("cublas error : %s : %s\n", msg, cublasGetErrorString(err));
 }
 
 int hasCublasError(const char * msg)
 {
-	int hasError = 0;
 	cublasStatus err = cublasGetError();
-	if(err != CUBLAS_STATUS_SUCCESS) {
-		fprintf(stderr, "cublas error : %s : %s\n", msg, 
-			cublasGetErrorString(err));
-		fatal(NULL);
-		hasError = 1;
-	}
-	return hasError;
+	if(err != CUBLAS_STATUS_SUCCESS)
+		error("cublas error : %s : %s\n", msg, cublasGetErrorString(err));
+	return 0;
 }
