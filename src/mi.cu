@@ -8,141 +8,7 @@
 
 #define NTHREADS 16
 
-__device__ float get_min(int n, const float * x)
-{
-	float min = x[0];
-	for(int i = 1; i < n; i++) {
-		if(x[i] < min)
-			min = x[i];
-	}
-	return min;
-}
-
-__device__ float get_max(int n, const float * x)
-{
-	float max = x[0];
-	for(int i = 1; i < n; i++) {
-		if(x[i] > max)
-			max = x[i];
-	}
-	return max;
-}
-
-__device__ void scale(float knot_max, int n, float * x)
-{
-	float
-		max = get_max(n, x),
-		min = get_min(n, x),
-		delta = max - min;
-
-	for(int i = 0; i < n; i++)
-		x[i] = (knot_max * (x[i] - min)) / delta;
-}
-
-// bins must be initialized to zero before calling get_bin_scores
-__device__ void get_bin_scores(int nbins, int order, float * knots, float x,
-	float * bins)
-{
-	int i0 = (int)floorf(x) + order - 1;
-	if(i0 >= nbins)
-		i0 = nbins - 1;
-
-	bins[i0] = 1.f;
-	for(int i = 2; i <= order; i++) {
-		for(int j = i0 - i + 1; j <= i0; j++) {
-			int
-				dpom1 = j + i - 1, dpo = j + i, dp1 = j + 1;
-			float
-				ld = 0.f, rd = 0.f;
-
-			if(knots[dpom1] != knots[j])
-				ld = (x - knots[j]) / (knots[dpom1] - knots[j]);
-			if(knots[dpo] != knots[dp1])
-				rd = (knots[dpo] - x) / (knots[dpo] - knots[dp1]);
-
-			bins[j] = ld * bins[j] + rd * bins[j + 1];
-		}
-	}
-}
-
-__device__ float get_entropy(int nbins, int nsamples, float * bin_scores)
-{
-	float entropy = 0.f, prob, logp;
-	for(int i = 0; i < nbins; i++) {
-		prob = 0.f;
-		for(int j = 0; j < nsamples; j++)
-			prob += bin_scores[j * nbins + i];
-		prob /= (float) nsamples;
-
-		if(prob <= 0.f)
-			logp = 0.f;
-		else
-			logp = __log2f(prob);
-
-		entropy += prob * logp;
-	}
-	return -entropy;
-}
-
-__device__ float get_joint_entropy(int nbins, int nsamples, float * x_bins,
-	float * y_bins)
-{
-	float prob, logp, xy_entropy;
-	xy_entropy = 0.f;
-	for(int i = 0; i < nbins; i++) {
-		for(int j = 0; j < nbins; j++) {
-			prob = 0.f;
-			for(int k = 0; k < nsamples; k++)
-				prob += x_bins[k * nbins + i] * y_bins[k * nbins + j];
-			prob /= (float)nsamples;
-
-			if(prob <= 0.f)
-				logp = 0.f;
-			else
-				logp = log2(prob);
-
-			xy_entropy += prob * logp;
-		}
-	}
-	return -xy_entropy;
-}
-
-__global__ void gmi(int nbins, int order, int nknots, float * knots,
-	int nsamples, int nx, float * x, int pitch_x, float * bins_x, int pitch_bx,
-	int ny, float * y, int pitch_y,float * bins_y, int pitch_by,
-	float * mi, int pitch_mi)
-{
-	int
-		col_x = blockDim.x * blockIdx.x + threadIdx.x,
-		col_y = blockDim.y * blockIdx.y + threadIdx.y;
-
-	if((col_x >= nx) || (col_y >= ny))
-		return;
-
-	float
-		knot_max = knots[nknots - 1],
-		* cur_x = x + col_x * pitch_x,
-		* cur_bins_x = bins_x + col_x * pitch_bx,
-		entropy_x,
-		* cur_y = y + col_y * pitch_y,
-		* cur_bins_y = bins_y + col_y * pitch_by,
-		entropy_y,
-		entropy_xy;
-
-	scale(knot_max, nsamples, cur_x);
-	scale(knot_max, nsamples, cur_y);
-
-	for(int i = 0; i < nsamples; i++) {
-		get_bin_scores(nbins, order, knots, cur_x[i], cur_bins_x + i * nbins);
-		get_bin_scores(nbins, order, knots, cur_y[i], cur_bins_y + i * nbins);
-	}
-	entropy_x = get_entropy(nbins, nsamples, cur_bins_x);
-	entropy_y = get_entropy(nbins, nsamples, cur_bins_y);
-	entropy_xy = get_joint_entropy(nbins, nsamples, cur_bins_x, cur_bins_y);
-	(mi + col_y * pitch_mi)[col_x] = entropy_x + entropy_y - entropy_xy;
-}
-
-int initKnots(int nbins, int order, float ** knots)
+static int initKnots(int nbins, int order, float ** knots)
 {
 	int
 		om1 = order - 1,
@@ -153,57 +19,235 @@ int initKnots(int nbins, int order, float ** knots)
 	*knots = Calloc(nknots, float);	
 	for(int i = 0; i < nknots; i++) {
 		if(i <= om1)
-			(*knots)[i] = 0.0;
+			(*knots)[i] = 0.f;
 		else if(i <= degree)
-			(*knots)[i] = (*knots)[i-1] + 1.0;
+			(*knots)[i] = (*knots)[i-1] + 1.f;
 		else
-			(*knots)[i] = (*knots)[degree] + 1.0;
+			(*knots)[i] = (*knots)[degree] + 1.f;
 	}
 	return nknots;
+}
+
+static float get_min(int n, const float * arr)
+{
+	float min = arr[0];
+	for(int i = 1; i < n; i++) {
+		if(arr[i] < min)
+			min = arr[i];
+	}
+	return min;
+}
+
+static float get_max(int n, const float * arr)
+{
+	float max = arr[0];
+	for(int i = 1; i < n; i++) {
+		if(arr[i] > max)
+			max = arr[i];
+	}
+	return max;
+}
+
+__global__ void scale(float knot_max, int nx, float * mins,
+	float * maxes, int nsamples, float * x, int pitch_x)
+{
+	int
+		col_idx = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if(col_idx >= nx)
+		return;
+
+	float
+		min = mins[col_idx], delta = maxes[col_idx] - min,
+		* col = x + col_idx * pitch_x;
+
+	for(int i = 0; i < nsamples; i++)
+		col[i] = (knot_max * (col[i] - min)) / delta;
+}
+
+__device__ float do_fraction(float numer, float denom) {
+	float result = 0.f; 
+
+	if((numer == denom) && (numer != 0.f))
+		result = 1.f;
+	else if(denom != 0.f)
+		result = numer / denom;
+
+	return result;
+}
+
+// bins must be initialized to zero before calling get_bin_scores
+__global__ void get_bin_scores(int nbins, int order,
+	int nknots, float * knots, int nsamples, int nx, float * x, int pitch_x,
+	float * bins, int pitch_bins)
+{
+	int
+		col_x = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if(col_x >= nx)
+		return;
+
+	float
+		* in_col = x + col_x * pitch_x,
+		* bin_col = bins + col_x * pitch_bins;
+
+	for(int k = 0; k < nsamples; k++, bin_col += nbins) {
+		float z = in_col[k];
+		int i0 = (int)floorf(z) + order - 1;
+		if(i0 >= nbins)
+			i0 = nbins - 1;
+
+		bin_col[i0] = 1.f;
+		for(int i = 2; i <= order; i++) {
+			for(int j = i0 - i + 1; j <= i0; j++) {
+				int
+					dpom1 = j + i - 1, dpo = j + i, dp1 = j + 1;
+				float
+					ld = 0.f, rd = 0.f;
+	
+				ld = do_fraction(z - knots[j], knots[dpom1] - knots[j]);
+				rd = do_fraction(knots[dpo] - z, knots[dpo] - knots[dp1]);
+
+				float result;
+				if (j + 1 >= nbins)
+					result = ld * bin_col[j];
+				else
+					result = ld * bin_col[j] + rd * bin_col[j + 1];
+				bin_col[j] = result;
+			}
+		}
+	}
+}
+
+__global__ void get_entropy(int nbins, int nsamples, int nx,
+	float * bin_scores, int pitch_bin_scores, float * entropies)
+{
+	int
+		col_x = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if(col_x >= nx)
+		return;
+
+	float
+		* in_col = bin_scores + col_x * pitch_bin_scores,
+		entropy = 0.f, prob, logp;
+
+    for(int i = 0; i < nbins; i++) {
+        prob = 0.f;
+        for(int j = 0; j < nsamples; j++)
+            prob += in_col[j * nbins + i];
+        prob /= (double) nsamples;
+
+		if(prob <= 0.f)
+			logp = 0.f;
+		else
+			logp = __log2f(prob);
+
+        entropy += prob * logp;
+    }
+	entropies[col_x] = -entropy;
+}
+
+__global__ void get_joint_entropy(int nbins, int nsamples,
+	int nx, float * x_bin_scores, int pitch_x_bin_scores,
+	int ny, float * y_bin_scores, int pitch_y_bin_scores,
+	float * joint_entropies, int pitch_joint_entropies)
+{
+	int
+		col_x = blockDim.x * blockIdx.x + threadIdx.x,
+		col_y = blockDim.y * blockIdx.y + threadIdx.y;
+
+	if((col_x >= nx) || (col_y >= ny))
+		return;
+
+    float
+		prob, logp, xy_entropy,
+		* x_bins = x_bin_scores + col_x * pitch_x_bin_scores,
+		* y_bins = y_bin_scores + col_y * pitch_y_bin_scores;
+		
+	xy_entropy = 0.f;
+    for(int i = 0; i < nbins; i++) {
+        for(int j = 0; j < nbins; j++) {
+            prob = 0.f;
+            for(int k = 0; k < nsamples; k++)
+                prob += x_bins[k * nbins + i] * y_bins[k * nbins + j];
+            prob /= (float)nsamples;
+
+			if(prob <= 0.f)
+				logp = 0.f;
+			else
+				logp = __log2f(prob);
+
+            xy_entropy += prob * logp;
+        }
+    }
+    xy_entropy = -xy_entropy;
+	(joint_entropies + col_y * pitch_joint_entropies)[col_x] = xy_entropy;
 }
 
 void bSplineMutualInfo(int nbins, int order, int nsamples, int nx,
 	const float * x, int ny, const float * y, float * out_mi)
 {
 	size_t
-		pitch_x, pitch_y,
-		pitch_bins_x, pitch_bins_y,
-		pitch_mi;
+		pitch_x, pitch_y;
 	int
 		nknots, nblocks_x, nblocks_y;
 	float
-		* knots, * dknots, 
+		* knots, 
+		* mins_x, * maxes_x,
+		* dmins_x, * dmaxes_x,
+		* mins_y, * maxes_y,
+		* dmins_y, * dmaxes_y,
 		* dx, * dy,
-		* dbins_x, * dbins_y,
-		* dmi;
+		* dknots;
+
+	mins_x = Calloc(nx, float);
+	maxes_x = Calloc(nx, float);
+	for(int i = 0; i < nx; i++) {
+		const float * col = x + i * nsamples;
+		mins_x[i] = get_min(nsamples, col);
+		maxes_x[i] = get_max(nsamples, col);
+	}
+
+	mins_y = Calloc(ny, float);
+	maxes_y = Calloc(ny, float);
+	for(int i = 0; i < ny; i++) {
+		const float * col = y + i * nsamples;
+		mins_y[i] = get_min(nsamples, col);
+		maxes_y[i] = get_max(nsamples, col);
+	}
+
+	cudaMalloc((void **)&dmins_x, nx * sizeof(float));
+	cudaMemcpy(dmins_x, mins_x, nx * sizeof(float), cudaMemcpyHostToDevice);
+	Free(mins_x);
+
+	cudaMalloc((void **)&dmaxes_x, nx * sizeof(float));
+	cudaMemcpy(dmaxes_x, maxes_x, nx * sizeof(float), cudaMemcpyHostToDevice);
+	Free(maxes_x);
+
+	cudaMalloc((void **)&dmins_y, ny * sizeof(float));
+	cudaMemcpy(dmins_y, mins_y, ny * sizeof(float), cudaMemcpyHostToDevice);
+	Free(mins_y);
+
+	cudaMalloc((void **)&dmaxes_y, ny * sizeof(float));
+	cudaMemcpy(dmaxes_y, maxes_y, ny * sizeof(float), cudaMemcpyHostToDevice);
+	Free(maxes_y);
+
+	checkCudaError("bSplineMutualInfoSingle: transfering extrema to the gpu");
+
+	nknots = initKnots(nbins, order, &knots);
+	float knot_max = knots[nknots - 1];
 
 	cudaMallocPitch((void **)&dx, &pitch_x, nsamples * sizeof(float), nx);
 	cudaMemcpy2D(dx, pitch_x, x, nsamples * sizeof(float),
 		nsamples * sizeof(float), nx, cudaMemcpyHostToDevice);
 
-	cudaMallocPitch((void **)&dbins_x, &pitch_bins_x,
-		nbins * nsamples * sizeof(float), nx);
-	cudaMemset2D(dbins_x, pitch_bins_x, 0, nbins * nsamples * sizeof(float),
-		nx);
-
 	cudaMallocPitch((void **)&dy, &pitch_y, nsamples * sizeof(float), ny);
 	cudaMemcpy2D(dy, pitch_y, y, nsamples * sizeof(float),
 		nsamples * sizeof(float), ny, cudaMemcpyHostToDevice);
+
+	checkCudaError("bSplineMutualInfoSingle: initializing vars on gpu");
 	
-	cudaMallocPitch((void **)&dbins_y, &pitch_bins_y,
-		nbins * nsamples * sizeof(float), ny);
-	cudaMemset2D(dbins_y, pitch_bins_y, 0, nbins * nsamples * sizeof(float),
-		ny);
-
-	nknots = initKnots(nbins, order, &knots);
-	cudaMalloc((void **)&dknots, nknots * sizeof(float));
-	cudaMemcpy(dknots, knots, nknots * sizeof(float), cudaMemcpyHostToDevice);
-	Free(knots);
-
-	cudaMallocPitch((void **)&dmi, &pitch_mi, nx * sizeof(float), ny);
-
-	checkCudaError("bSplineMutualInfoSingle: calculating entropy on gpu");
-
 	nblocks_x = nx / NTHREADS;
 	if(nblocks_x * NTHREADS < nx)
 		nblocks_x++;
@@ -212,28 +256,112 @@ void bSplineMutualInfo(int nbins, int order, int nsamples, int nx,
 	if(nblocks_y * NTHREADS < ny)
 		nblocks_y++;
 
-	dim3
-		gridDim(nblocks_x, nblocks_y), blockDim(NTHREADS, NTHREADS);
+	scale<<<nblocks_x, NTHREADS>>>(knot_max, nx, dmins_x, dmaxes_x, nsamples,
+		dx, pitch_x / sizeof(float));
 
-	int
-		px = pitch_x / sizeof(float), pbx = pitch_bins_x / sizeof(float),
-		py = pitch_y / sizeof(float), pby = pitch_bins_y / sizeof(float),
-		pm = pitch_mi / sizeof(float);
+	scale<<<nblocks_y, NTHREADS>>>(knot_max, ny, dmins_y, dmaxes_y, nsamples,
+		dy, pitch_y / sizeof(float));
 
-	gmi<<<gridDim, blockDim>>>(nbins, order, nknots, dknots, nsamples,
-		nx, dx, px, dbins_x, pbx, ny, dy, py, dbins_y, pby, dmi, pm);
+	checkCudaError("bSplineMutualInfoSingle: scaling variables on gpu");
 
-	checkCudaError("bSplineMutualInfoSingle: calculating entropy on gpu");
+	cudaFree(dmins_x);
+	cudaFree(dmaxes_x);
+	cudaFree(dmins_y);
+	cudaFree(dmaxes_y);
+
+	float
+		* dbins_x, * dbins_y;
+	size_t
+		pitch_bins_x, pitch_bins_y;
+
+	cudaMallocPitch((void **)&dbins_x, &pitch_bins_x,
+		nbins * nsamples * sizeof(float), nx);
+	cudaMemset2D(dbins_x, pitch_bins_x, 0, nbins * nsamples * sizeof(float),
+		nx);
+
+	cudaMallocPitch((void **)&dbins_y, &pitch_bins_y,
+		nbins * nsamples * sizeof(float), ny);
+	cudaMemset2D(dbins_y, pitch_bins_y, 0, nbins * nsamples * sizeof(float),
+		ny);
+
+	cudaMalloc((void **)&dknots, nknots * sizeof(float));
+	cudaMemcpy(dknots, knots, nknots * sizeof(float), cudaMemcpyHostToDevice);
+	Free(knots);
+
+	checkCudaError("bSplineMutualInfoSingle: initializing knots on gpu");
+
+	get_bin_scores<<<nblocks_x, NTHREADS>>>(nbins, order, nknots, dknots,
+		nsamples, nx, dx, pitch_x / sizeof(float),
+		dbins_x, pitch_bins_x / sizeof(float));
+
+	get_bin_scores<<<nblocks_y, NTHREADS>>>(nbins, order, nknots, dknots,
+		nsamples, ny, dy, pitch_y / sizeof(float),
+		dbins_y, pitch_bins_y / sizeof(float));
+
+	checkCudaError("bSplineMutualInfoSingle: calculating bin scores on gpu");
 
 	cudaFree(dknots);
-	cudaFree(dbins_x);
 	cudaFree(dx);
-	cudaFree(dbins_y);
 	cudaFree(dy);
 
-	cudaMemcpy2D(out_mi, nx * sizeof(float), dmi, pitch_mi,
-		nx * sizeof(float), ny, cudaMemcpyDeviceToHost);
+	float
+		* dentropies_x, * dentropies_y;
+
+	cudaMalloc((void **)&dentropies_x, nx * sizeof(float));
+	cudaMalloc((void **)&dentropies_y, ny * sizeof(float));
+
+	checkCudaError("bSplineMutualInfoSingle: allocating gpu ram for entropies");
+
+	get_entropy<<<nblocks_x, NTHREADS>>>(nbins, nsamples, nx, dbins_x,
+		pitch_bins_x / sizeof(float), dentropies_x);
+
+	get_entropy<<<nblocks_y, NTHREADS>>>(nbins, nsamples, ny, dbins_y,
+		pitch_bins_y / sizeof(float), dentropies_y);
 
 	checkCudaError("bSplineMutualInfoSingle: calculating entropy on gpu");
-	cudaFree(dmi);
+
+	size_t pitch_joint_entropies;
+	float * djoint_entropies;
+	cudaMallocPitch((void **)&djoint_entropies, &pitch_joint_entropies,
+		ny * sizeof(float), nx);
+	dim3
+		gridDim(nblocks_x, nblocks_y), blockDim(NTHREADS, NTHREADS);
+	get_joint_entropy<<<gridDim, blockDim>>>(nbins, nsamples,
+		nx, dbins_x, pitch_bins_x / sizeof(float),
+		ny, dbins_y, pitch_bins_y / sizeof(float),
+		djoint_entropies, pitch_joint_entropies / sizeof(float));
+	cudaFree(dbins_x);
+	cudaFree(dbins_y);
+
+	float
+		* entropies_x = Calloc(nx, float), * entropies_y = Calloc(nx, float);
+
+	cudaMemcpy2D(out_mi, ny * sizeof(float),
+		djoint_entropies, pitch_joint_entropies, ny * sizeof(float), nx,
+		cudaMemcpyDeviceToHost);
+	cudaFree(djoint_entropies);
+
+	cudaMemcpy(entropies_x, dentropies_x, nx * sizeof(float),
+		cudaMemcpyDeviceToHost);
+	cudaFree(dentropies_x);
+
+	cudaMemcpy(entropies_y, dentropies_y, ny * sizeof(float),
+		cudaMemcpyDeviceToHost);
+	cudaFree(dentropies_y);
+
+	checkCudaError("bSplineMutualInfoSingle: retrieving results from gpu");
+
+	for(int j = 0; j < ny; j++) {
+		float * out_col = out_mi + j * nx;
+		for(int i = 0; i < nx; i++)
+			out_col[i] = entropies_x[i] + entropies_y[j] - out_col[i];
+	}
+}
+
+void rBSplineMutualInfo(int * nBins, int * splineOrder, int * nsamples,
+	int * rowsA, const float * A, int * rowsB, const float * B, 
+	float * mutualInfo)
+{
+	bSplineMutualInfo(*nBins, *splineOrder, *nsamples, *rowsA, A, *rowsB, B,
+		mutualInfo);
 }

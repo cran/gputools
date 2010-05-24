@@ -115,7 +115,7 @@ if test "${device_emu}" = yes ; then
 	LIBS="-L${CUDA_HOME}${CUDA_LIB_DIR} -lcublasemu"
 else
 	EMULATION=""
-	DEVICEOPTS="-arch=sm_13"
+	DEVICEOPTS=""
 	OBJS13="kendall.o classification.o"
 	SVMDISABLED="FALSE"
 fi
