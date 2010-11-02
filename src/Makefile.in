@@ -8,13 +8,12 @@ CULA_OBJS := @CULA_OBJS@
 CULA_INCS := -I@CULA_HOME@/include
 
 #compiler/preprocessor options
-INCS := -I@CUDA_HOME@/include
-PARAMS := @EMULATION@ -Xcompiler "@R_INCLUDE@ @CPICFLAGS@"
-PARAMS13 := @DEVICEOPTS@
+INCS := -I@CUDA_HOME@/include @R_INCLUDE@
+PARAMS := @DEVICEOPTS@ -Xcompiler @CPICFLAGS@
 
 #linker options
-LD_PARAMS := -Xlinker "@R_LIB@ @RPATHFLAG@"
-LIBS :=  @LIBS@
+LD_PARAMS := @DEVICEOPTS@ -Xlinker @RPATHFLAG@
+LIBS :=  @R_LIB@ @LIBS@
 
 TARGETS := gputools.so
 
@@ -29,7 +28,7 @@ $(OBJS): %.o: %.$(EXT)
 	$(CC) -c $(INCS) $(PARAMS) $^ -o $@
 
 $(OBJS13): %.o: %.$(EXT)
-	$(CC) -c $(INCS) $(PARAMS13) $(PARAMS) $^ -o $@
+	$(CC) -c $(INCS) $(PARAMS) $^ -o $@
 
 $(CULA_OBJS): %.o: %.c
 	$(CC) -c $(INCS) $(CULA_INCS) $(PARAMS) $^ -o $@

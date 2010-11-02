@@ -282,10 +282,10 @@ void depthFirst(const int len, const int * merge, int level, int * otop,
 		depthFirst(len, merge, merge[left]-1, otop, order);
 }
 
-void RgpuMatMult(float * a, int * rowsa, int * colsa, 
+void RgpuMatMult(int *tpA, int *tpB, float * a, int * rowsa, int * colsa, 
 	float * b, int * rowsb, int * colsb, float * result) {
 
-	gpuMatMult(a, *rowsa, *colsa, b, *rowsb, *colsb, result);
+	gpuMatMult(*tpA, *tpB, a, *rowsa, *colsa, b, *rowsb, *colsb, result);
 }
 
 

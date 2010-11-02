@@ -56,7 +56,7 @@ extern "C" {
 	void Rhcluster(const float * distMat, const int * numPoints, 
 		int * merge, int * order, float * val, const char ** method);
 
-	void RgpuMatMult(float * a, int * rowsa, int * colsa, 
+  void RgpuMatMult(int *tpA, int *tpB, float * a, int * rowsa, int * colsa, 
 		float * b, int * rowsb, int * colsb, float * result);
 
 

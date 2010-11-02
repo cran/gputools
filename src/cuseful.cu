@@ -31,7 +31,7 @@ void checkDoubleCapable(const char * failMsg)
 	int major, minor;
 	major = minor = 0;
 	getComputeNumber(&major, &minor);
-	if((major < 1) || ((major >= 1) && (minor < 3)))
+	if((major < 1) || ((major == 1) && (minor < 3)))
 		error(failMsg);
 }
 

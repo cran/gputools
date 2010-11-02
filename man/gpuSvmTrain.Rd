@@ -63,22 +63,20 @@ for(i in 1:5) { if(y[i] == 0) {y[i] <- -1}}
 
 x <- matrix(runif(500), 100, 5)
 
-a <- gpuSvmTrain(y, x, isRegression = FALSE)
-print(a)
+# a <- gpuSvmTrain(y, x, isRegression = FALSE)
+# print(a)
 
-b <- gpuSvmPredict(x, a$supportVectors, a$svCoefficients, a$svOffset,
-    isRegression = FALSE)
-print(b)
+# b <- gpuSvmPredict(x, a$supportVectors, a$svCoefficients, a$svOffset, isRegression = FALSE)
+# print(b)
 
 # this time around, y : -1 or 1 and we set isRegression to FALSE
 y <- runif(100, min = -1, max = 1)
 
 x <- matrix(runif(500), 100, 5)
 
-a <- gpuSvmTrain(y, x, isRegression = TRUE)
-print(a)
+# a <- gpuSvmTrain(y, x, isRegression = TRUE)
+# print(a)
 
-b <- gpuSvmPredict(x, a$supportVectors, a$svCoefficients, a$svOffset,
-    isRegression = TRUE)
-print(b)
+# b <- gpuSvmPredict(x, a$supportVectors, a$svCoefficients, a$svOffset, isRegression = TRUE)
+# print(b)
 }

@@ -6,14 +6,9 @@
 #include<R.h>
 #include<matmult.h>
 
-void gpuMatMult(float * a, int rowsa, int colsa, 
+void gpuMatMult(int tpA, int tpB, float * a, int rowsa, int colsa, 
 	float * b, int rowsb, int colsb, float * c)
 {
-	if(colsa != rowsb) {
-		fprintf(stderr, "error: matrix dimensions mismatched for matrix multiplication\n"); 
-		return;
-	}
-
 	float
 		* gpua, * gpub, * gpuc;
 
@@ -24,16 +19,20 @@ void gpuMatMult(float * a, int rowsa, int colsa,
 	checkCublasError("gpuMatMult memory allocation");
 	cublasAlloc(rowsb*colsb, sizeof(float), (void **) &gpub);
 	checkCublasError("gpuMatMult memory allocation");
-	cublasAlloc(rowsa*colsb, sizeof(float), (void **) &gpuc);
+	char opA = tpA ? 'T' : 'N';
+	char opB = tpB ? 'T' : 'N';
+	int rowsOpA = tpA ? colsa : rowsa;
+	int colsOpA = tpA ? rowsa : colsa;
+	int colsOpB = tpB ? rowsb : colsb;
+	cublasAlloc(rowsOpA*colsOpB, sizeof(float), (void **) &gpuc);
 	checkCublasError("gpuMatMult memory allocation");
 
 	cublasSetVector(rowsa*colsa, sizeof(float), a, 1, gpua, 1);
-	cublasSetVector(colsa*colsb, sizeof(float), b, 1, gpub, 1);
+	cublasSetVector(rowsb*colsb, sizeof(float), b, 1, gpub, 1);
 
-	cublasSgemm('N', 'N', rowsa, colsb, colsa, 1.0, gpua, rowsa, gpub, colsa, 
-		0.0, gpuc, rowsa);
+	cublasSgemm(opA, opB, rowsOpA, colsOpB, colsOpA, 1.0, gpua, rowsa, gpub, rowsb,	0.0, gpuc, rowsOpA);
 
-	cublasGetVector(rowsa*colsb, sizeof(float), gpuc, 1, c, 1);
+	cublasGetVector(rowsOpA*colsOpB, sizeof(float), gpuc, 1, c, 1);
 	checkCublasError("gpuMatMult read from gpu memory");
 
 	cublasFree(gpua);

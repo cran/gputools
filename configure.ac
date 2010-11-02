@@ -1,6 +1,8 @@
 AC_INIT([gputools], 0.01)
 AC_CONFIG_AUX_DIR([tools])
 
+AC_MSG_NOTICE([checking for critical tools used by configure])
+
 AC_ARG_WITH([cuda-home],
 	AC_HELP_STRING([--with-cuda-home=cuda_home],
 		[specify the root of your cuda install, e.g. /usr/local/cuda]),
@@ -20,12 +22,6 @@ AC_ARG_WITH([r-lib],
 	AC_HELP_STRING([--with-r-lib=r-lib],
 		[specify the full path to your R shared libraries, e.g. /usr/lib64/R/lib]),
 	[R_LIB="$withval"])
-
-device_emu=""
-AC_ARG_ENABLE([emulation],
-	AC_HELP_STRING([--enable-emulation],
-		[emulate the gpu because maybe you don't have one]),
-	[device_emu=$enableval])
 
 AC_MSG_CHECKING("environment variable CUDA_HOME")
 if test -z "${CUDA_HOME}"; then
@@ -79,22 +75,24 @@ else
 	AC_MSG_RESULT("using ${R_LIB} for R shared libraries")
 fi
 
-AC_MSG_CHECKING("whether this is the 64 bit linux version of CULA")
+AC_MSG_CHECKING("whether this is the 64 bit version of CULA")
 AC_CHECK_FILE([${CULA_HOME}/lib64/libcula.so], [CULA64BIT="yes"])
+AC_CHECK_FILE([${CULA_HOME}/lib64/libcula.dylib], [CULA64BIT="yes"])
 if test -z "${CULA64BIT}"; then
 	AC_MSG_RESULT("no")
 	AC_MSG_CHECKING("checking whether cula is present at all")
 	AC_CHECK_FILE([${CULA_HOME}/lib/libcula.so], [HAS_CULA="yes"])
+	AC_CHECK_FILE([${CULA_HOME}/lib/libcula.dylib], [HAS_CULA="yes"])
 	if test -z "${HAS_CULA}"; then
 		AC_MSG_RESULT("cula is not installed; gpuFastICA is disabled")
 		HAS_CULA="no"
 		CULA_OBJS=""
-		LIBS="-L${CUDA_HOME}${CUDA_LIB_DIR} -lcublas -lcuda"
+		LIBS="-L${CUDA_HOME}${CUDA_LIB_DIR} -lcublas"
 	else
 		AC_MSG_RESULT("yes -- using ${CULA_HOME}/lib for CULA libs")
 		CULA_LIB_DIR="/lib"
 		CULA_OBJS="ica.o svd.o"
-		LIBS="-L${CULA_HOME}${CULA_LIB_DIR} -lcula -lcublas -lcuda"
+		LIBS="-L${CULA_HOME}${CULA_LIB_DIR} -lcula -lcublas"
 	fi
 else
 	AC_MSG_RESULT("yes -- using ${CULA_HOME}/lib64 for CULA libs")
@@ -102,32 +100,39 @@ else
 	CULA_LIB_DIR="/lib64"
 	CULA_OBJS="ica.o svd.o"
 	BLAS_LIBS=`"${R_HOME}/bin/R" CMD config BLAS_LIBS`
-	LIBS="-L${CULA_HOME}${CULA_LIB_DIR} -lcula -lcublas -lcuda"
+	LIBS="-L${CULA_HOME}${CULA_LIB_DIR} -lcula -lcublas"
 fi
 
-if test "${device_emu}" = yes ; then
-	EMULATION="-deviceemu"
-	DEVICEOPTS=""
-	CULA_OBJS=""
-	CULA_LIB_DIR=""
-	OBJS13="kendall.o"
-	SVMDISABLED="TRUE"
-	LIBS="-L${CUDA_HOME}${CUDA_LIB_DIR} -lcublasemu"
-else
-	EMULATION=""
-	DEVICEOPTS=""
-	OBJS13="kendall.o classification.o"
-	SVMDISABLED="FALSE"
-fi
+DEVICEOPTS=""
+OBJS13="kendall.o classification.o"
+SVMDISABLED="FALSE"
+
+AC_MSG_NOTICE([determining host platform])
+arch=`uname -m`
+osrelease=`uname -r`
+osversion=`uname -v`
 
 RPATHFLAG=""
 AC_CANONICAL_HOST
 case "${host_os}" in
 	*darwin*)
 		if test -z "${CULA_LIB_DIR}"; then
-			RPATHFLAG="-Wl,-rpath,${CUDA_HOME}${CUDA_LIB_DIR}"
+			RPATHFLAG="-rpath,${CUDA_HOME}${CUDA_LIB_DIR}"
 		else
-			RPATHFLAG="-Wl,-rpath,${CULA_HOME}${CULA_LIB_DIR}"
+			RPATHFLAG="-rpath,${CULA_HOME}${CULA_LIB_DIR}"
+		fi
+		RPATHFLAG="${RPATHFLAG},'${R_LIB}'"
+		R_LIB=""
+		AC_PATH_PROG([SW_VERS],[sw_vers],[no],[$PATH])
+		if test "$arch" = "i386"; then
+			$SW_VERS -productVersion | grep '^10.6' > /dev/null 2>&1
+			if test "x$?" = "x0" ; then
+				DEVICEOPTS="-m64"
+			fi
+		elif test "$arch" = "x86_64"; then
+			DEVICEOPTS="-m64"
+		else
+			AC_MSG_WARN([Unrecognised Darwin Architecture])
 		fi
 	;;
 esac
@@ -143,7 +148,6 @@ AC_SUBST(R_INCLUDE)
 AC_SUBST(R_LIB)
 
 AC_SUBST(CPICFLAGS)
-AC_SUBST(EMULATION)
 AC_SUBST(DEVICEOPTS)
 AC_SUBST(OBJS13)
 AC_SUBST(SVMDISABLED)

@@ -559,7 +559,6 @@ RPATHFLAG
 SVMDISABLED
 OBJS13
 DEVICEOPTS
-EMULATION
 CPICFLAGS
 R_LIB
 R_INCLUDE
@@ -567,6 +566,7 @@ CULA_OBJS
 CULA_HOME
 HAS_CULA
 CUDA_HOME
+SW_VERS
 host_os
 host_vendor
 host_cpu
@@ -620,7 +620,6 @@ with_cuda_home
 with_cula_home
 with_r_include
 with_r_lib
-enable_emulation
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1235,12 +1234,6 @@ if test -n "$ac_init_help"; then
    esac
   cat <<\_ACEOF
 
-Optional Features:
-  --disable-option-checking  ignore unrecognized --enable/--with options
-  --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
-  --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
-  --enable-emulation      emulate the gpu because maybe you don't have one
-
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
   --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
@@ -1707,6 +1700,9 @@ ac_configure="$SHELL $ac_aux_dir/configure"  # Please don't use this var.
 
 
 
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for critical tools used by configure" >&5
+$as_echo "$as_me: checking for critical tools used by configure" >&6;}
+
 
 # Check whether --with-cuda-home was given.
 if test "${with_cuda_home+set}" = set; then :
@@ -1732,13 +1728,6 @@ fi
 # Check whether --with-r-lib was given.
 if test "${with_r_lib+set}" = set; then :
   withval=$with_r_lib; R_LIB="$withval"
-fi
-
-
-device_emu=""
-# Check whether --enable-emulation was given.
-if test "${enable_emulation+set}" = set; then :
-  enableval=$enable_emulation; device_emu=$enableval
 fi
 
 
@@ -1848,8 +1837,8 @@ $as_echo "\"using ${R_INCLUDE} for R header files\"" >&6; }
 $as_echo "\"using ${R_LIB} for R shared libraries\"" >&6; }
 fi
 
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking \"whether this is the 64 bit linux version of CULA\"" >&5
-$as_echo_n "checking \"whether this is the 64 bit linux version of CULA\"... " >&6; }
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking \"whether this is the 64 bit version of CULA\"" >&5
+$as_echo_n "checking \"whether this is the 64 bit version of CULA\"... " >&6; }
 as_ac_File=`$as_echo "ac_cv_file_${CULA_HOME}/lib64/libcula.so" | $as_tr_sh`
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ${CULA_HOME}/lib64/libcula.so" >&5
 $as_echo_n "checking for ${CULA_HOME}/lib64/libcula.so... " >&6; }
@@ -1859,6 +1848,28 @@ else
   test "$cross_compiling" = yes &&
   as_fn_error "cannot check for file existence when cross compiling" "$LINENO" 5
 if test -r "${CULA_HOME}/lib64/libcula.so"; then
+  eval "$as_ac_File=yes"
+else
+  eval "$as_ac_File=no"
+fi
+fi
+eval ac_res=\$$as_ac_File
+	       { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_res" >&5
+$as_echo "$ac_res" >&6; }
+eval as_val=\$$as_ac_File
+   if test "x$as_val" = x""yes; then :
+  CULA64BIT="yes"
+fi
+
+as_ac_File=`$as_echo "ac_cv_file_${CULA_HOME}/lib64/libcula.dylib" | $as_tr_sh`
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ${CULA_HOME}/lib64/libcula.dylib" >&5
+$as_echo_n "checking for ${CULA_HOME}/lib64/libcula.dylib... " >&6; }
+if { as_var=$as_ac_File; eval "test \"\${$as_var+set}\" = set"; }; then :
+  $as_echo_n "(cached) " >&6
+else
+  test "$cross_compiling" = yes &&
+  as_fn_error "cannot check for file existence when cross compiling" "$LINENO" 5
+if test -r "${CULA_HOME}/lib64/libcula.dylib"; then
   eval "$as_ac_File=yes"
 else
   eval "$as_ac_File=no"
@@ -1899,18 +1910,40 @@ eval as_val=\$$as_ac_File
   HAS_CULA="yes"
 fi
 
+	as_ac_File=`$as_echo "ac_cv_file_${CULA_HOME}/lib/libcula.dylib" | $as_tr_sh`
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ${CULA_HOME}/lib/libcula.dylib" >&5
+$as_echo_n "checking for ${CULA_HOME}/lib/libcula.dylib... " >&6; }
+if { as_var=$as_ac_File; eval "test \"\${$as_var+set}\" = set"; }; then :
+  $as_echo_n "(cached) " >&6
+else
+  test "$cross_compiling" = yes &&
+  as_fn_error "cannot check for file existence when cross compiling" "$LINENO" 5
+if test -r "${CULA_HOME}/lib/libcula.dylib"; then
+  eval "$as_ac_File=yes"
+else
+  eval "$as_ac_File=no"
+fi
+fi
+eval ac_res=\$$as_ac_File
+	       { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_res" >&5
+$as_echo "$ac_res" >&6; }
+eval as_val=\$$as_ac_File
+   if test "x$as_val" = x""yes; then :
+  HAS_CULA="yes"
+fi
+
 	if test -z "${HAS_CULA}"; then
 		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: \"cula is not installed; gpuFastICA is disabled\"" >&5
 $as_echo "\"cula is not installed; gpuFastICA is disabled\"" >&6; }
 		HAS_CULA="no"
 		CULA_OBJS=""
-		LIBS="-L${CUDA_HOME}${CUDA_LIB_DIR} -lcublas -lcuda"
+		LIBS="-L${CUDA_HOME}${CUDA_LIB_DIR} -lcublas"
 	else
 		{ $as_echo "$as_me:${as_lineno-$LINENO}: result: \"yes -- using ${CULA_HOME}/lib for CULA libs\"" >&5
 $as_echo "\"yes -- using ${CULA_HOME}/lib for CULA libs\"" >&6; }
 		CULA_LIB_DIR="/lib"
 		CULA_OBJS="ica.o svd.o"
-		LIBS="-L${CULA_HOME}${CULA_LIB_DIR} -lcula -lcublas -lcuda"
+		LIBS="-L${CULA_HOME}${CULA_LIB_DIR} -lcula -lcublas"
 	fi
 else
 	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: \"yes -- using ${CULA_HOME}/lib64 for CULA libs\"" >&5
@@ -1919,23 +1952,18 @@ $as_echo "\"yes -- using ${CULA_HOME}/lib64 for CULA libs\"" >&6; }
 	CULA_LIB_DIR="/lib64"
 	CULA_OBJS="ica.o svd.o"
 	BLAS_LIBS=`"${R_HOME}/bin/R" CMD config BLAS_LIBS`
-	LIBS="-L${CULA_HOME}${CULA_LIB_DIR} -lcula -lcublas -lcuda"
+	LIBS="-L${CULA_HOME}${CULA_LIB_DIR} -lcula -lcublas"
 fi
 
-if test "${device_emu}" = yes ; then
-	EMULATION="-deviceemu"
-	DEVICEOPTS=""
-	CULA_OBJS=""
-	CULA_LIB_DIR=""
-	OBJS13="kendall.o"
-	SVMDISABLED="TRUE"
-	LIBS="-L${CUDA_HOME}${CUDA_LIB_DIR} -lcublasemu"
-else
-	EMULATION=""
-	DEVICEOPTS=""
-	OBJS13="kendall.o classification.o"
-	SVMDISABLED="FALSE"
-fi
+DEVICEOPTS=""
+OBJS13="kendall.o classification.o"
+SVMDISABLED="FALSE"
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: determining host platform" >&5
+$as_echo "$as_me: determining host platform" >&6;}
+arch=`uname -m`
+osrelease=`uname -r`
+osversion=`uname -v`
 
 RPATHFLAG=""
 # Make sure we can run config.sub.
@@ -2012,13 +2040,66 @@ case $host_os in *\ *) host_os=`echo "$host_os" | sed 's/ /-/g'`;; esac
 case "${host_os}" in
 	*darwin*)
 		if test -z "${CULA_LIB_DIR}"; then
-			RPATHFLAG="-Wl,-rpath,${CUDA_HOME}${CUDA_LIB_DIR}"
+			RPATHFLAG="-rpath,${CUDA_HOME}${CUDA_LIB_DIR}"
 		else
-			RPATHFLAG="-Wl,-rpath,${CULA_HOME}${CULA_LIB_DIR}"
+			RPATHFLAG="-rpath,${CULA_HOME}${CULA_LIB_DIR}"
+		fi
+		RPATHFLAG="${RPATHFLAG},'${R_LIB}'"
+		R_LIB=""
+		# Extract the first word of "sw_vers", so it can be a program name with args.
+set dummy sw_vers; ac_word=$2
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+$as_echo_n "checking for $ac_word... " >&6; }
+if test "${ac_cv_path_SW_VERS+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  case $SW_VERS in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_SW_VERS="$SW_VERS" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in $PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+    for ac_exec_ext in '' $ac_executable_extensions; do
+  if { test -f "$as_dir/$ac_word$ac_exec_ext" && $as_test_x "$as_dir/$ac_word$ac_exec_ext"; }; then
+    ac_cv_path_SW_VERS="$as_dir/$ac_word$ac_exec_ext"
+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+  done
+IFS=$as_save_IFS
+
+  test -z "$ac_cv_path_SW_VERS" && ac_cv_path_SW_VERS="no"
+  ;;
+esac
+fi
+SW_VERS=$ac_cv_path_SW_VERS
+if test -n "$SW_VERS"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $SW_VERS" >&5
+$as_echo "$SW_VERS" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
+
+		if test "$arch" = "i386"; then
+			$SW_VERS -productVersion | grep '^10.6' > /dev/null 2>&1
+			if test "x$?" = "x0" ; then
+				DEVICEOPTS="-m64"
+			fi
+		elif test "$arch" = "x86_64"; then
+			DEVICEOPTS="-m64"
+		else
+			{ $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: Unrecognised Darwin Architecture" >&5
+$as_echo "$as_me: WARNING: Unrecognised Darwin Architecture" >&2;}
 		fi
 	;;
 esac
-
 
 
 
