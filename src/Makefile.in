@@ -8,7 +8,7 @@ CULA_OBJS := @CULA_OBJS@
 CULA_INCS := -I@CULA_HOME@/include
 
 #compiler/preprocessor options
-INCS := -I@CUDA_HOME@/include @R_INCLUDE@
+INCS := -I. -I@CUDA_HOME@/include @R_INCLUDE@
 PARAMS := @DEVICEOPTS@ -Xcompiler @CPICFLAGS@
 
 #linker options
@@ -17,21 +17,21 @@ LIBS :=  @R_LIB@ @LIBS@
 
 TARGETS := gputools.so
 
-CC := @CUDA_HOME@/bin/nvcc -gencode arch=compute_10,code=sm_10 -gencode arch=compute_11,code=sm_11 -gencode arch=compute_12,code=sm_12 -gencode arch=compute_13,code=sm_13 -gencode arch=compute_20,code=sm_20
+NVCC := @CUDA_HOME@/bin/nvcc -gencode arch=compute_10,code=sm_10 -gencode arch=compute_11,code=sm_11 -gencode arch=compute_12,code=sm_12 -gencode arch=compute_13,code=sm_13 -gencode arch=compute_20,code=sm_20
 
 all: $(TARGETS) 
 
 $(TARGETS): $(OBJS13) $(CULA_OBJS) $(OBJS)
-	$(CC) -shared $(LD_PARAMS) $(LIBS) $(OBJS13) $(CULA_OBJS) $(OBJS) -o $@
+	$(NVCC) -shared $(LD_PARAMS) $(LIBS) $(OBJS13) $(CULA_OBJS) $(OBJS) -o $@
 
 $(OBJS): %.o: %.$(EXT)
-	$(CC) -c $(INCS) $(PARAMS) $^ -o $@
+	$(NVCC) -c $(INCS) $(PARAMS) $^ -o $@
 
 $(OBJS13): %.o: %.$(EXT)
-	$(CC) -c $(INCS) $(PARAMS) $^ -o $@
+	$(NVCC) -c $(INCS) $(PARAMS) $^ -o $@
 
 $(CULA_OBJS): %.o: %.c
-	$(CC) -c $(INCS) $(CULA_INCS) $(PARAMS) $^ -o $@
+	$(NVCC) -c $(INCS) $(CULA_INCS) $(PARAMS) $^ -o $@
 
 clean:
 	rm -rf *o

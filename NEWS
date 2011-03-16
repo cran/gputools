@@ -1,6 +1,12 @@
 gputools changes
 =================
 
+changes in gputools 0.24
+
+- A couple of changes to the Makefile:
+	* added -I. for compatibility with R 2.12
+	* switched from CC to NVCC for compat with ~/.R/Makevars
+
 changes in gputools 0.21
 
 - fixed another bug in gpuMi
