@@ -35,6 +35,8 @@ void gpuLSFitF(float * X, int rows, int cols, float * Y, int yCols,
 	float *dQR;
 
 	int stride = alignBlock(rows, blockExp);
+	
+	cublasInit();
 	cublasAlloc(stride * cols, fbytes, (void **)&dQR);
 
 	// This is overkill:  just need to zero the padding.
@@ -54,6 +56,7 @@ void gpuLSFitF(float * X, int rows, int cols, float * Y, int yCols,
 		memcpy(resids, Y, rows * yCols * fbytes);
 
    	cublasFree(dQR);
+	cublasShutdown();
 }
 
 void gpuLSFitD(double *X, int n, int p, double *Y, int nY,

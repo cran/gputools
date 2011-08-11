@@ -1,6 +1,13 @@
 gputools changes
 =================
 
+changes in gputools 0.26
+- fixes to several potential bugs:  
+	There was a variable in the QR code which was never  
+	deallocated.  Also, there were several variables freed with  
+	the wrong method. Also, added a missing cublasInit/Shutdown pair.
+	Thanks to Eunjin Lee's error reporting!
+
 changes in gputools 0.24
 
 - added support for configure argument --with-compiler-bindir and

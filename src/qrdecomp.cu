@@ -750,7 +750,7 @@ __host__ void getQRDecompBlocked(int rows, int cols, double tol, float * dQR,
     cublasAlloc(blockSize * (cols - blockSize), fbytes, (void**) &dWtR);
     cublasAlloc(cols, fbytes, (void**) &dColNorms);
 
-    checkCublasError("getQRDecompBlocked:");
+    checkCublasError("getQRDecompBlocked allocation:");
 
     // Obtains the highest valued norm in order to approximate a condition-
     // based lower bound, "minElt".
@@ -909,7 +909,7 @@ __host__ void getQRDecompBlocked(int rows, int cols, double tol, float * dQR,
     }
 
     *rank = rk;	
-    checkCublasError("getQRDecompBlocked:");
+    checkCublasError("getQRDecompBlocked, postblock:");
     checkCudaError("getQRDecompBlocked:");
      
     // dQR now contains the upper-triangular portion of the factorization,
@@ -919,11 +919,12 @@ __host__ void getQRDecompBlocked(int rows, int cols, double tol, float * dQR,
     // diagonal is saved in qrAux, while the sub-diagonal portion is
     // written onto QR.
 
-    cudaFree(dT);
-    cudaFree(dV);
-    cudaFree(dW);
-    cudaFree(du);
-    cudaFree(dWtR);
+    cublasFree(dT);
+    cublasFree(dV);
+    cublasFree(dW);
+    cublasFree(du);
+    cublasFree(dWtR);
+    cublasFree(dColNorms);
 
-    checkCublasError("getQRDecompBlocked:");
+    checkCublasError("getQRDecompBlocked, freed memory:");
 }

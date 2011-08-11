@@ -1,8 +1,8 @@
-4af12732f37b0fa1197648473640a198 *DESCRIPTION
+77793e6980c19b9fe5572c749c792220 *DESCRIPTION
 ca0d7d854616ebd5dc53a2e70f27033c *INSTALL
 d32239bcb673463ab874e80d47fae504 *LICENSE
 f5cfb0b2b34422892971bfa3510c6035 *NAMESPACE
-14e50dc0d20cbbd265df11e91357d0d8 *NEWS
+f1a0c326a1401ec7fb982d41775dcbc0 *NEWS
 feb197963044023805ae0945e1a58cf3 *R/chooseGpu.R
 67d82b84fbfa1fa54a2c4b218b993ff5 *R/fake.R
 45b18f3f50494bd95fbdf866f48850bf *R/getGpuId.R
@@ -65,13 +65,13 @@ b76e1353cc1dd2730b1a938f612a4bc2 *src/ica.c
 4a55e68fe394595ec133216d49824702 *src/kendall.h
 06d39c371a32b20569eb679954c8a73c *src/lr.cu
 dc3507777351271fe9699b3930466e92 *src/lr.h
-b9d53d19e59b2491b2068ed27ed85fdb *src/lsfit.cu
+52f7fd1bf5f48e263d03771c16bb6c3c *src/lsfit.cu
 7e89ce1af115fba7fd7b5818552e930a *src/lsfit.h
 fd0339407b11b38eaedbbf65cadca2b6 *src/matmult.cu
 849d9f9a57ef818af1e3311d2ed42d33 *src/matmult.h
 382e24715f963eb5bafd58a711fa4e61 *src/mi.cu
 5367b988a955e861554f4d46f22c2fdb *src/mi.h
-8d37d69d0619368d97ca3fec7223ce6c *src/qrdecomp.cu
+a69e0675db299bf8f9a0e886a5038e19 *src/qrdecomp.cu
 8d0d7d2150fda185a7ae022fe6f077e8 *src/qrdecomp.h
 392aeac2f5b85ffb8933561b28176f7f *src/rinterface.cu
 56d67fbba8584aeab559da123f9d2cb5 *src/rinterface.h
