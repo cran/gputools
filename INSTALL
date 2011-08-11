@@ -46,6 +46,11 @@ Rumor has it that the source package does work with the 32bit build of R under
 OS X 10.6. The source package does not support Mac dynamic libraries, so you
 may have trouble with certain Mac versions of CULA.
 
+In case you have a Linux distribution with default gcc compiler version > 4.4,
+install gcc 4.4 elsewhere and us the configure argument
+--with-compiler-bindir=<directory containing gcc 4.4>
+or set the environment variable COMPILER_BINDIR.
+
 =========================
 + machines w/ older gpus
 =========================

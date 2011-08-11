@@ -9,7 +9,7 @@ CULA_INCS := -I@CULA_HOME@/include
 
 #compiler/preprocessor options
 INCS := -I. -I@CUDA_HOME@/include @R_INCLUDE@
-PARAMS := @DEVICEOPTS@ -Xcompiler @CPICFLAGS@
+PARAMS := @MISC_PARAMS@ @DEVICEOPTS@ -Xcompiler @CPICFLAGS@
 
 #linker options
 LD_PARAMS := @DEVICEOPTS@ -Xlinker @RPATHFLAG@

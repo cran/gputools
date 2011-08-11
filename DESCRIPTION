@@ -1,6 +1,6 @@
 Package: gputools
-Version: 0.24
-Date: 2011-03-16
+Version: 0.25
+Date: 2011-08-11
 Title: A few GPU enabled functions
 Author: Josh Buckner <bucknerj@umich.edu>, Mark Seligman
         <mseligman@rapidbiologics.com>, Justin Wilson
@@ -18,5 +18,5 @@ Description: This package provides R interfaces to a handful of common
 License: GPL-3
 URL: http://brainarray.mbni.med.umich.edu/Brainarray/Rgpgpu
 Repository: CRAN
-Date/Publication: 2011-03-16 16:21:03
-Packaged: 2011-03-16 13:56:34 UTC; bucknerj
+Date/Publication: 2011-10-04 07:25:21
+Packaged: 2011-08-11 14:18:32 UTC; bucknerj

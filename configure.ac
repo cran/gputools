@@ -3,6 +3,11 @@ AC_CONFIG_AUX_DIR([tools])
 
 AC_MSG_NOTICE([checking for critical tools used by configure])
 
+AC_ARG_WITH([compiler-bindir],
+	AC_HELP_STRING([--with-compiler-bindir=compiler_bindir],
+		[specify the directory containing gcc, e.g. /usr/bin]),
+	[COMPILER_BINDIR="$withval"])
+
 AC_ARG_WITH([cuda-home],
 	AC_HELP_STRING([--with-cuda-home=cuda_home],
 		[specify the root of your cuda install, e.g. /usr/local/cuda]),
@@ -22,6 +27,21 @@ AC_ARG_WITH([r-lib],
 	AC_HELP_STRING([--with-r-lib=r-lib],
 		[specify the full path to your R shared libraries, e.g. /usr/lib64/R/lib]),
 	[R_LIB="$withval"])
+
+AC_MSG_CHECKING("environment variable COMPILER_BINDIR")
+if test -z "${COMPILER_BINDIR}"; then
+	AC_MSG_RESULT("COMPILER_BINDIR not set; using user's default path")
+else
+	AC_MSG_RESULT("using COMPILER_BINDIR=${COMPILER_BINDIR}")
+	AC_CHECK_FILE([${COMPILER_BINDIR}/gcc], [HAS_GCC="yes"])
+	if test -z "${HAS_GCC}"; then
+		AC_MSG_ERROR("cannot find gcc; check that ${COMPILER_BINDIR} is the correct location; using user's default path")
+		MISC_PARAMS=""
+	else
+		AC_MSG_RESULT("gcc found in ${COMPILER_BINDIR}")
+		MISC_PARAMS="--compiler-bindir ${COMPILER_BINDIR}"
+	fi
+fi
 
 AC_MSG_CHECKING("environment variable CUDA_HOME")
 if test -z "${CUDA_HOME}"; then
@@ -138,6 +158,7 @@ case "${host_os}" in
 esac
 
 AC_SUBST(LIBS)
+AC_SUBST(MISC_PARAMS)
 AC_SUBST(CUDA_HOME)
 
 AC_SUBST(HAS_CULA)
