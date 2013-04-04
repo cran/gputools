@@ -1,2 +1,4 @@
-void gpuMatMult(int tpA, int tpB, float * a, int rowsa, int colsa, float * b, int rowsb, 
-	int colsb, float * c);
+#include<Rcpp.h>
+using namespace Rcpp;
+
+RcppExport SEXP gpuMatMult(SEXP a, SEXP b);

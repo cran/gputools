@@ -59,13 +59,13 @@ gpuFastICA(X, n.comp, alg.typ = c("parallel","deflation"),
   neg-entropy (J) which are more robust than kurtosis based measures and fast
   to compute.
 
-  The approximation takes the form
-
-  \eqn{J(y)=[E\{G(y)\}-E\{G(v)\}]^2} where \eqn{v} is a N(0,1) r.v.
-  
-  The following choices of G are included as options
-  \eqn{G(u)=\frac{1}{\alpha} \log \cosh (\alpha u)}
-  and \eqn{G(u)=-\exp(\frac{-u^2}{2})}
+%  The approximation takes the form
+%
+%  \eqn{J(y)=[E\{G(y)\}-E\{G(v)\}]^2} where \eqn{v} is a N(0,1) r.v.
+%  
+%  The following choices of G are included as options
+%  \eqn{G(u)=\frac{1}{\alpha} \log \cosh (\alpha u)}
+%  and \eqn{G(u)=-\exp(\frac{-u^2}{2})}
 
   \bold{Algorithm}
   
@@ -150,25 +150,5 @@ plot(1:1000, X[,2 ], type = "l", xlab = "", ylab = "")
 plot(1:1000, a$S[,1 ], type = "l", main = "ICA source estimates", 
      xlab = "", ylab = "")
 plot(1:1000, a$S[, 2], type = "l", xlab = "", ylab = "")
-
-#-----------------------------------------------------------
-#Example 3: using FastICA to perform projection pursuit on a
-#           mixture of bivariate normal distributions
-#-----------------------------------------------------------
-
-if(require(MASS)){
-x <- mvrnorm(n = 1000, mu = c(0, 0), Sigma = matrix(c(10, 3, 3, 1), 2, 2))
-x1 <- mvrnorm(n = 1000, mu = c(-1, 2), Sigma = matrix(c(10, 3, 3, 1), 2, 2))
-X <- rbind(x, x1)
-
-a <- gpuFastICA(X, 2, alg.typ = "deflation", fun = "logcosh", alpha = 1,
-             row.norm = FALSE,
-			 maxit = 200, tol = 0.0001, verbose = TRUE)
-
-par(mfrow = c(1, 3))
-plot(a$X, main = "Pre-processed data")
-plot(a$X\%*\%a$K, main = "PCA components")
-plot(a$S, main = "ICA components")
-}
 }
 \keyword{multivariate}

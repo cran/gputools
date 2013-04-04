@@ -154,6 +154,12 @@ case "${host_os}" in
 		else
 			AC_MSG_WARN([Unrecognised Darwin Architecture])
 		fi
+
+		RCPP_INCLUDE=`Rscript -e 'Rcpp:::CxxFlags()'`
+		RCPP_LIB=`Rscript -e 'Rcpp:::LdFlags()' | sed s/i386/x86_64/g`
+
+		R_INCLUDE="${R_INCLUDE} ${RCPP_INCLUDE}"
+		R_LIB="${R_LIB} ${RCPP_LIB}"
 	;;
 esac
 
