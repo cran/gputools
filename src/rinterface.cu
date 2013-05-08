@@ -1,22 +1,33 @@
+#include<R.h>
+#include<Rinternals.h>
+#include <R_ext/Rdynload.h>
+
 #include<stdio.h>
 #include<string.h>
 
 #include<cublas.h>
 
+#include<matmult.h>
 #include<correlation.h>
 #include<kendall.h>
 #include<distance.h>
 #include<granger.h>
 #include<hcluster.h>
-/* #include<lr.h> */
-#include<matmult.h>
 #include<qrdecomp.h>
 #include<mi.h>
 #include<lsfit.h>
 #include<cuseful.h>
-#include<R.h>
 
 #include<rinterface.h>
+
+void R_init_mylib(DllInfo *info) {
+    R_CallMethodDef callMethods[]  = {
+        {"gpuMatMult", (DL_FUNC) &gpuMatMult, 2},
+        {"cpuMatMult", (DL_FUNC) &cpuMatMult, 2},
+        {NULL, NULL, 0}
+    };
+    R_registerRoutines(info, NULL, callMethods, NULL, NULL);
+}
 
 // whichObs = 0 means everything
 // whichObs = 1 means pairwiseComplete
@@ -280,13 +291,6 @@ void depthFirst(const int len, const int * merge, int level, int * otop,
 	} else
 		depthFirst(len, merge, merge[left]-1, otop, order);
 }
-/*
-void RgpuMatMult(int *tpA, int *tpB, float * a, int * rowsa, int * colsa, 
-	float * b, int * rowsb, int * colsb, float * result) {
-
-	gpuMatMult(*tpA, *tpB, a, *rowsa, *colsa, b, *rowsb, *colsb, result);
-}
-*/
 
 void RgetQRDecomp(int * rows, int * cols, float * a, float * q, int * pivot,
 	int * rank)

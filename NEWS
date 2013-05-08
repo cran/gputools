@@ -1,10 +1,15 @@
 gputools changes
 =================
 
+changes in gputools 0.28
+- updated installation procedure
+- updated OSX compatibility
+- removed CULA dependencies
+
 changes in gputools 0.27
 - removed LICENSE file and updated DESCRIPTION file
 - fixed R documentation files
-- removed nonfunctioning svm code
+- removed nonfunctional svm code
 
 changes in gputools 0.26
 - fixes to several potential bugs:  
