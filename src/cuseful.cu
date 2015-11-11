@@ -8,6 +8,8 @@
 
 #include"cuseful.h"
 
+#include<string>
+
 #define HALF RAND_MAX/2
 
 void fatal(const char * msg)
@@ -83,20 +85,6 @@ void printMat(int rows, int cols, const float * mat, const char * msg) {
 	if(msg != NULL) Rprintf("----------\n");
 }
 
-void getRandVect(float * vect, size_t n) {
-	srand(time(0));
-	for(size_t i = 0; i < n; i++)
-		vect[i] = ((float)rand())/((float)RAND_MAX);
-}
-
-void getBernVect(float * vect, size_t n) {
-	srand(time(0));
-	for(size_t i = 0; i < n; i++) {
-		if(rand() <= HALF) vect[i] = 1.f;
-		else vect[i] = 0.f;
-	}
-}
-
 int hasCudaError(const char * msg) {
 	cudaError_t err = cudaGetLastError();
 	if(cudaSuccess != err)
@@ -113,7 +101,7 @@ void checkCudaError(const char * msg) {
 	}
 }
 
-char * cublasGetErrorString(cublasStatus err)
+std::string cublasGetErrorString(cublasStatus err)
 {
 	switch(err) {
 		case CUBLAS_STATUS_SUCCESS :
@@ -142,13 +130,13 @@ void checkCublasError(const char * msg)
 {
 	cublasStatus err = cublasGetError();
 	if(err != CUBLAS_STATUS_SUCCESS)
-		error("cublas error : %s : %s\n", msg, cublasGetErrorString(err));
+		error("cublas error : %s : %s\n", msg, cublasGetErrorString(err).c_str());
 }
 
 int hasCublasError(const char * msg)
 {
 	cublasStatus err = cublasGetError();
 	if(err != CUBLAS_STATUS_SUCCESS)
-		error("cublas error : %s : %s\n", msg, cublasGetErrorString(err));
+		error("cublas error : %s : %s\n", msg, cublasGetErrorString(err).c_str());
 	return 0;
 }
