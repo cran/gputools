@@ -1,6 +1,6 @@
-useDynLib(gputools)
+useDynLib(gputools, .registration = TRUE, .fixes = "C_")
 
-export(gpuCor, 
+export(gpuCor, gpuCorPairs, gpuCorPerm, gpuAssoc, gpuKmeans, gpuRowTtest,
 	gpuTtest,
 	gpuQr, gpuSolve,
 	gpuGranger, 
@@ -8,9 +8,13 @@ export(gpuCor,
 	gpuMatMult, cpuMatMult, gpuCrossprod, gpuTcrossprod,
 	gpuMi,
 	gpuLm, gpuLm.fit, gpuLsfit, gpuGlm, gpuGlm.fit,
-	chooseGpu, getGpuId)
+	chooseGpu, getGpuId, gpuAvailable,
+	gpuSvd, gpuPrcomp)
 
 importFrom("stats",
+  "pnorm",
+  "pt",
+  "qt",
   ".getXlevels",
   "as.dist",
   "complete.cases",
@@ -21,3 +25,5 @@ importFrom("stats",
   "model.offset",
   "model.response",
   "model.weights")
+
+importFrom("utils", "globalVariables")

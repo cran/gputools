@@ -10,7 +10,8 @@
 }
 
 \usage{
-gpuMi(x, y = NULL, bins = 2, splineOrder = 1)
+gpuMi(x, y = NULL, bins = 2, splineOrder = 1,
+		precision = getOption("gputools.precision", "single"))
 }
 
 \arguments{
@@ -34,6 +35,10 @@ gpuMi(x, y = NULL, bins = 2, splineOrder = 1)
 	\item{splineOrder}{a single integer value giving the degree of the spline
 		polynomials used to define both the number of bins a single value will
 		be placed in and the weight of membership given to the value.}
+	\item{precision}{\code{"single"} or \code{"double"}: the floating point precision
+		the GPU computes in. Single precision is the default, set with
+		\code{options(gputools.precision = "double")}; it runs many times
+		faster on most consumer GPUs. Results are returned as doubles either way.}
 }
 
 \value{
@@ -47,10 +52,11 @@ gpuMi(x, y = NULL, bins = 2, splineOrder = 1)
 	2004.  Estimating mutual information using B-spline functions -- an
 	improved similarity measure for analysing gene expression data.
 	\emph{BMC Bioinformatics}. 5:118.  Available from
-	\url{http://www.biomedcentral.com/1471-2105/5/118}
+	\doi{10.1186/1471-2105-5-118}
 }
 
 \examples{
+\dontshow{if (gpuAvailable()) withAutoprint(\{ # examplesIf}
 	# get 3 random variables each with 20 samples
 	x <- matrix(runif(60), 20, 3)
 	y <- matrix(runif(60), 20, 3)
@@ -58,4 +64,5 @@ gpuMi(x, y = NULL, bins = 2, splineOrder = 1)
 	y[,2] <- 3.0 * (x[,1] + x[,3])
 	z <- gpuMi(x, y, bins = 10, splineOrder = 3)
 	print(z)
+\dontshow{\}) # examplesIf}
 }

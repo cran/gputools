@@ -1,0 +1,325 @@
+---
+title: "gputools against base R: measured timings"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{gputools against base R: measured timings}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+bench <- read.csv("benchmarks.csv")
+machine <- read.csv("benchmarks-machine.csv")
+```
+
+Whether a GPU is worth it depends on the computation, the size of the data
+and the hardware at both ends. This vignette reports what we measured, so
+you can judge for your own work, including the cases where the GPU loses.
+
+The timings below were recorded by `bench/run-benchmarks.R` in the
+package's source repository, not computed when this vignette was built
+(the machines that build R packages have no GPU).
+
+## The machine
+
+```{r machine, echo = FALSE}
+knitr::kable(machine, col.names = c("", ""))
+```
+
+The CPU side is base R as most people run it: a multi-threaded BLAS on 8
+cores, which is what `%*%`, `lm`, `qr` and `solve` use. `dist`, `hclust`
+and `cor` do not use the BLAS and run on one core.
+
+Each time is the median of three runs after a warm-up run, in seconds.
+Data is in R's memory at the start and the result back in R's memory at the
+end, so the GPU times include copying both ways.
+
+## Results
+
+```{r results, echo = FALSE}
+tab <- bench[!is.na(bench$cpu), ]
+speedup <- function(gpu) ifelse(is.na(gpu), "",
+                                sprintf("%.1fx", tab$cpu / gpu))
+shown <- data.frame(
+  Task = tab$task, Size = tab$size,
+  `base R` = sprintf("%.3f", tab$cpu),
+  `GPU single` = ifelse(is.na(tab$single), "",
+                        sprintf("%.3f", tab$single)),
+  `speed-up` = speedup(tab$single),
+  `GPU double` = sprintf("%.3f", tab$double),
+  `speed-up ` = speedup(tab$double),
+  check.names = FALSE)
+knitr::kable(shown, align = "llrrrrr")
+```
+
+`gpuMatMult` only computes in double precision, so it has no single
+column.
+
+```{r chart, echo = FALSE, fig.width = 7, fig.height = 4.5, fig.alt = "Speed-up of each gputools function over base R in single and double precision, on a log scale; values above 1 mean the GPU is faster."}
+s <- tab$cpu / tab$single
+d <- tab$cpu / tab$double
+labels <- sub(" vs .*", "", tab$task)
+op <- par(mar = c(4, 13, 1, 1))
+barplot(t(cbind(s, d)), beside = TRUE, horiz = TRUE, log = "x",
+        names.arg = labels, las = 1, xlab = "speed-up over base R (log scale)",
+        legend.text = c("single", "double"),
+        args.legend = list(x = "bottomright", bty = "n"))
+abline(v = 1, lty = 2)
+par(op)
+```
+
+## Reading the results
+
+**Where the GPU wins.** Computations that are large, regular and many
+times over the same data: Kendall's correlation (base R's is a direct
+O(n^2) loop per pair of variables), Pearson's and Spearman's (one matrix
+product of standardised columns on the GPU), distance matrices, Granger
+tests over many pairs of series, the combined `gpuDistClust`, which keeps
+the distance matrix on the GPU for the clustering, and solving and
+decomposing large matrices (`gpuSolve`, `gpuPrcomp`).
+
+**Where it does not.**
+
+- `gpuMatMult`, `gpuLm`: a modern multi-threaded BLAS is already fast at
+  these, and the GPU pays for copying the data across and back. The GPU
+  here is also a workstation card with slow double precision.
+- `gpuHclust` alone: the clustering is a sequence of n small dependent
+  steps, which leaves the GPU mostly idle; it pays off only together with
+  the distance computation (`gpuDistClust`).
+- Small data of any kind: see the next section.
+
+**Single or double precision.** Consumer and workstation GPUs run double
+precision many times slower than single; data-centre GPUs do not. For
+statistics whose result is a correlation, a distance or a test statistic,
+single precision usually loses nothing that matters; for least squares on
+badly conditioned data, use double.
+
+## When the GPU pays off
+
+```{r crossover-data, include = FALSE}
+xo <- read.csv("crossover.csv")
+xo$speedup <- xo$cpu / xo$single
+xo$speedupDouble <- xo$cpu / xo$double
+fns <- unique(xo$fn[!is.na(xo$cpu)])
+firstAt <- function(f, k) {
+  d <- xo[xo$fn == f & !is.na(xo$cpu), ]
+  hit <- d$size[d$speedup >= k]
+  if (length(hit)) format(min(hit), big.mark = ",", scientific = FALSE) else "not reached"
+}
+ov <- read.csv("call-overhead.csv")
+```
+
+Every GPU call has a fixed cost: copying the data to the card and back,
+starting the computation, and the first time a function is used in a
+session, compiling its GPU code. On small data that fixed cost is most of
+the time, and base R is faster. Each function has a size above which the
+GPU wins. The table gives, for each, the smallest size tested at which it
+beat base R in single precision, and at which it was at least 5 times
+faster; the chart shows the whole range.
+
+```{r crossover-table, echo = FALSE}
+what <- vapply(fns, function(f) xo$what[xo$fn == f][1], "")
+tested <- vapply(fns, function(f) {
+  z <- range(xo$size[xo$fn == f])
+  paste(format(z, big.mark = ",", scientific = FALSE), collapse = " to ")
+}, "")
+knitr::kable(data.frame(
+  Function = fns, `Size measured as` = what, Tested = tested,
+  `Faster than R from` = vapply(fns, firstAt, "", k = 1),
+  `5 times faster from` = vapply(fns, firstAt, "", k = 5),
+  check.names = FALSE, row.names = NULL))
+```
+
+```{r crossover-chart, echo = FALSE, fig.width = 7.5, fig.height = 7.5, fig.alt = "Speed-up over base R against data size for each gputools function, single and double precision, on log scales; the dashed line at 1 marks where the GPU starts to win."}
+op <- par(mfrow = c(ceiling(length(fns) / 3), 3), mar = c(3.2, 3.2, 2, 0.5),
+          mgp = c(2, 0.6, 0), cex = 0.7)
+for (f in fns) {
+  d <- xo[xo$fn == f & !is.na(xo$cpu), ]
+  yr <- range(c(d$speedup, d$speedupDouble, 1), na.rm = TRUE)
+  plot(d$size, d$speedup, log = "xy", type = "b", pch = 19, ylim = yr,
+       xlab = d$what[1], ylab = "times faster than R", main = f)
+  lines(d$size, d$speedupDouble, type = "b", pch = 1, lty = 3)
+  abline(h = 1, lty = 2, col = "grey50")
+}
+par(op)
+```
+
+Filled points are single precision, open points double.
+
+### Calling it well
+
+- **Give it the whole problem in one call.** A call costs about
+  `r sprintf("%.0f", 1e6 * ov$seconds[1])` µs however small the data,
+  against `r sprintf("%.0f", 1e6 * ov$seconds[2])` µs for `cor()` on the
+  same two columns. Correlating 1,000 pairs of columns one `gpuCor` call at
+  a time took `r sprintf("%.3f", ov$seconds[3])` s, about
+  `r sprintf("%.0f", ov$seconds[3] / ov$seconds[5])` times as long as the
+  same loop with `cor()` (`r sprintf("%.3f", ov$seconds[5])` s). One
+  `gpuCor` call on all 1,000 columns at once, computing every one of the
+  million pairs, took `r sprintf("%.3f", ov$seconds[4])` s. Put the
+  variables in the columns of one matrix rather than looping.
+- **Below the sizes in the table, use base R.** The GPU's fixed cost is
+  larger than the whole computation there.
+- **The first call in a session compiles.** It adds about
+  `r sprintf("%.1f", bench$single[bench$task == "kernel compile, first use of a file"])`
+  s per group of functions and precision, once; time the second call when
+  comparing.
+
+## Wide data: the strongest pairs
+
+```{r pairs-data, include = FALSE}
+pp <- read.csv("pairs.csv")
+fmt <- function(v) ifelse(is.na(v), "--", sprintf("%.2f", v))
+```
+
+For thousands of variables or more, the whole correlation matrix is the
+problem: `r format(max(pp$variables), big.mark = ",")` variables have
+`r format(max(pp$variables)^2 / 2, big.mark = ",", scientific = FALSE)`
+pairs, and their matrix takes
+`r round(8 * max(pp$variables)^2 / 1e9)` GB. Usually only the strong
+pairs are wanted. `gpuCorPairs()` returns those, every pair at or above a
+threshold or each variable's strongest partners, computing the matrix on
+the GPU a block at a time and never holding it whole.
+
+The table times finding every pair with |r| >= 0.8 among variables of
+`r pp$rows[1]` observations (random data with a few hundred planted
+correlated groups): base R's `cor()` and then `which()`, `gpuCor()` and
+then `which()`, and `gpuCorPairs()`; and, last, `gpuCorPairs()` finding
+each variable's 10 strongest partners. Times are in seconds; "--" was not
+run, the matrix being too big to wait for.
+
+```{r pairs-table, echo = FALSE}
+knitr::kable(data.frame(
+  Variables = format(pp$variables, big.mark = ","),
+  `Pairs found` = format(pp$pairs, big.mark = ","),
+  `cor + which` = fmt(pp$cor), `gpuCor + which` = fmt(pp$gpuCor),
+  gpuCorPairs = fmt(pp$gpuCorPairs), `top 10 each` = fmt(pp$top10),
+  check.names = FALSE), align = "rrrrrr")
+```
+
+Most of the time `cor()` and `gpuCor()` take here goes on the matrix
+itself, building it and searching it in R, which `gpuCorPairs()` never
+does. Use it whenever you want pairs, not the matrix.
+
+## Association scans
+
+```{r assoc-data, include = FALSE}
+sc <- read.csv("assoc.csv")
+secs <- function(v) ifelse(is.na(v), "--", sprintf("%.2f", v))
+big <- sc[!is.na(sc$MatrixEQTL), ]
+big <- big[which.max(big$snps * big$genes), ]
+```
+
+`gpuAssoc()` tests every column of one matrix against every column of
+another by linear regression with covariates: the scan of an eQTL study,
+SNPs against genes. It computes what Matrix eQTL's linear model does
+(Shabalin 2012), so the comparison is with Matrix eQTL itself, version
+`r if (requireNamespace("MatrixEQTL", quietly = TRUE)) as.character(packageVersion("MatrixEQTL")) else "2.4"`,
+running on the multi-threaded OpenBLAS of the machine above. Each scan
+has `r sc$samples[1]` samples and `r sc$covariates[1]` covariates and
+reports p <= 1e-5; both programs reported the same associations wherever
+both ran.
+
+```{r assoc-table, echo = FALSE}
+knitr::kable(data.frame(
+  SNPs = format(sc$snps, big.mark = ","),
+  Genes = format(sc$genes, big.mark = ","),
+  Tests = format(sc$snps * as.double(sc$genes), big.mark = ",",
+                 scientific = FALSE),
+  Found = format(sc$found, big.mark = ","),
+  `Matrix eQTL` = secs(sc$MatrixEQTL),
+  `gpuAssoc single` = secs(sc$single), `gpuAssoc double` = secs(sc$double),
+  check.names = FALSE), align = "rrrrrrr")
+```
+
+Times are in seconds; "--" was not run (at four billion tests Matrix eQTL
+ran out of a 48 GB job's memory). At
+`r format(big$snps * as.double(big$genes), big.mark = ",", scientific = FALSE)`
+tests the GPU was `r round(big$MatrixEQTL / big$single)` times as fast.
+A genome-wide scan, millions of SNPs, is a loop over chromosomes or
+blocks of SNPs, each call large enough to keep the GPU busy.
+
+## K-means
+
+```{r kmeans-data, include = FALSE}
+km <- read.csv("kmeans.csv")
+```
+
+`gpuKmeans()` runs Lloyd's algorithm, step for step as
+`kmeans(algorithm = "Lloyd")` does. Base R's default, Hartigan-Wong, is
+also timed, since it is what most people run: it does more work per pass
+but needs fewer passes, and usually ends at a lower total within-cluster
+sum of squares from the same start. All runs start from the same centres
+(`r km$dimensions[1]` dimensions, at most 20 iterations); the last column
+is the GPU's sum of squares relative to Hartigan-Wong's. Times are in
+seconds; "--" was not run, base R taking many minutes.
+
+```{r kmeans-table, echo = FALSE}
+f <- function(v, d = 2) ifelse(is.na(v), "--", formatC(v, format = "f", digits = d))
+knitr::kable(data.frame(
+  Points = format(km$points, big.mark = ",", scientific = FALSE),
+  Clusters = format(km$clusters, big.mark = ","),
+  `kmeans Lloyd` = f(km$lloyd), `kmeans Hartigan-Wong` = f(km$hartiganWong),
+  `gpuKmeans single` = f(km$single, 3), `gpuKmeans double` = f(km$double, 3),
+  `sum of squares vs H-W` = f(km$wssGpu / km$wssHW, 3),
+  check.names = FALSE), align = "rrrrrrr")
+```
+
+The GPU pays off from about ten thousand points and a hundred clusters,
+and most with many clusters. Where Lloyd's algorithm ends at a worse
+sum of squares, a few random starts (`nstart`) cost little on the GPU and
+usually close the gap.
+
+## Permutation tests
+
+```{r perm-data, include = FALSE}
+pm <- read.csv("perm.csv")
+rt <- read.csv("rowtest.csv")
+s3 <- function(v) ifelse(is.na(v), "--", formatC(v, format = "f", digits = 3))
+s2 <- function(v) ifelse(is.na(v), "--", formatC(v, format = "f", digits = 2))
+```
+
+A permutation test repeats the whole computation for every shuffle of
+the samples, so a thousand permutations cost a thousand times the test:
+the case the GPU is best at. Both functions here also give Westfall and
+Young's maxT adjustment for testing everything at once, which needs every
+permutation's results together.
+
+`gpuCorPerm()`, `r pm$permutations[1]` permutations of
+`r pm$rows[1]` samples, every column of x against every column of y,
+against the same test in R: a loop of `cor()` calls, and the faster loop of
+BLAS products of standardised columns. Times in seconds; "--" was not run.
+
+```{r perm-table, echo = FALSE}
+knitr::kable(data.frame(
+  `x and y variables` = format(pm$variables, big.mark = ","),
+  Pairs = format(pm$variables^2, big.mark = ",", scientific = FALSE),
+  `cor loop` = s2(pm$corLoop), `BLAS loop` = s2(pm$blasLoop),
+  `gpuCorPerm single` = s3(pm$single), `gpuCorPerm double` = s3(pm$double),
+  check.names = FALSE), align = "rrrrrr")
+```
+
+`gpuRowTtest()`, Welch's t test of every gene between two groups of
+samples with `r rt$permutations[1]` permutations, against the same test in
+vectorised R (each permutation's t for every gene from `rowMeans` and
+`rowSums`). The t tests themselves, without permutations, run on the CPU
+and take the time in the last column.
+
+```{r rowtest-table, echo = FALSE}
+knitr::kable(data.frame(
+  Genes = format(rt$genes, big.mark = ","), Samples = rt$samples,
+  `R loop` = s2(rt$cpu), `gpuRowTtest single` = s3(rt$single),
+  `gpuRowTtest double` = s3(rt$double),
+  `no permutations` = s3(rt$noPermutations),
+  check.names = FALSE), align = "rrrrrr")
+```
+
+## Your own hardware
+
+To measure your own machine, run from a checkout of the source repository
+with gputools installed:
+
+```sh
+Rscript bench/run-benchmarks.R my-results
+```

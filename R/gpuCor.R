@@ -1,213 +1,159 @@
-gpuCor <- function(x, y = NULL, use = "everything", method = "pearson") {
-	x <- as.matrix(x)
-	nx <- ncol(x)
-	size <- nrow(x)
+gpuCor <- function(x, y = NULL, use = "everything", method = "pearson",
+    test = FALSE, precision = getOption("gputools.precision", "single")) {
+    precision <- .precision(precision)
+    x <- as.matrix(x)
+    nx <- ncol(x)
+    size <- nrow(x)
 
-	if(is.null(y)) {
-		y <- x
-	} else {
-		y <- as.matrix(y)
-	}
-	ny <- ncol(y)
+    if(!is.null(y)) {
+        y <- as.matrix(y)
+        if(nrow(y) != size) {
+            stop("x and y have different numbers of rows")
+        }
+    }
+    ny <- if(is.null(y)) nx else ncol(y)
 
-	n <- nx * ny
-
-  methods <- c("pearson", "kendall")
-	method <- pmatch(method, methods, -1)
-	if(is.na(method)) {
-		stop("invalid correlation method")
-	}
-	if(method == -1) {
-		stop("ambiguous correlation method")
-	}
+    methods <- c("pearson", "kendall", "spearman")
+    # pmatch() gives -1 (nomatch) for an unknown name and for an ambiguous
+    # abbreviation alike
+    method <- pmatch(method, methods, -1)
+    if(method == -1) {
+        stop("invalid or ambiguous correlation method")
+    }
+    method <- methods[method]
 
     uses <- c("everything", "pairwise.complete.obs")
-	use <- pmatch(use, uses, -1)
-	if(is.na(use)) {
-		stop("invalid correlation method")
-	}
-	if(use == -1) {
-		stop("ambiguous correlation method")
-	}
+    use <- pmatch(use, uses, -1)
+    if(is.na(use) || use == -1) {
+        stop("use must be \"everything\" or \"pairwise.complete.obs\"")
+    }
+    use <- uses[use]
+    storage.mode(x) <- "double"
+    if(!is.null(y)) storage.mode(y) <- "double"
+    dn <- list(colnames(x), colnames(if(is.null(y)) x else y))
 
-	if(methods[method] == "pearson") {
-		answer <- .C("rpmcc", NAOK=TRUE,
-			as.integer(use - 1), as.single(x), as.integer(nx),
-			as.single(y), as.integer(ny), as.integer(size),
-			pairs = single(n), corr = single(n), ts = single(n),
-			PACKAGE='gputools')
+    # a column with a missing value gives NA under use = "everything", as
+    # with cor()
+    incomplete <- function() outer(colSums(is.na(x)) > 0,
+                                   colSums(is.na(y)) > 0, "|")
 
-		pairs <- t(matrix(answer$pairs, ny, nx))
-		corr <- t(matrix(answer$corr, ny, nx))
-		ts <- t(matrix(answer$ts, ny, nx))
+    selfCor <- is.null(y)
+    if(selfCor) y <- x
+    # no pair has to drop rows: every correlation uses all of them, and the
+    # whole matrix is one product of standardised columns on the GPU
+    allRows <- use == "everything" || !(anyNA(x) || anyNA(y))
 
-		return(list(coefficients = corr, ts = ts, pairs = pairs))
+    if(method == "pearson" ||
+       (method == "spearman" && allRows)) {
+        if(method == "spearman") {
+            # cor()'s Spearman is Pearson's on the ranks (ties averaged)
+            # (rank(ties.method = "average", na.last = "keep") per column,
+            # on the GPU)
+            x <- .Call(C_gpuRank, x, precision)
+            if(!selfCor) y <- .Call(C_gpuRank, y, precision) else y <- x
+        }
+        if(allRows) {
+            answer <- .Call(C_gpuCorProduct, x, if(selfCor) NULL else y,
+                            precision)
+            corr <- answer$corr
+            ts <- answer$ts
+            pairs <- matrix(as.double(size), nx, ny)
+        } else {
+            answer <- .Call(C_gpuPmcc, 1L, x, as.integer(nx), y,
+                            as.integer(ny), as.integer(size), precision)
+            pairs <- t(matrix(answer$pairs, ny, nx))
+            corr <- t(matrix(answer$corr, ny, nx))
+            ts <- .tScore(corr, pairs)
+        }
+    } else {
+        ts <- NULL
+        answer <- if(method == "kendall") {
+            .Call(C_gpuKendall, x, as.integer(nx), y, as.integer(ny),
+                  as.integer(size), precision)
+        } else {
+            .Call(C_gpuSpearman, x, as.integer(nx), y, as.integer(ny),
+                  as.integer(size), precision)
+        }
+        corr <- matrix(answer$r, nx, ny)
+        pairs <- matrix(answer$n, nx, ny)
+        if(use == "everything") {
+            corr[incomplete()] <- NA
+            pairs[incomplete()] <- size
+        }
+    }
+    corr[is.nan(corr)] <- NA
+    dimnames(corr) <- dimnames(pairs) <- dn
 
-	} else if(methods[method] == "kendall") {
-
-		if(uses[use] != "everything") {
-			warning("NA handling for Kendall's is not yet supported. Defaulting to using everything. Sorry for any inconvenience.")
-		}
-
-    filename <- system.file("cuda", 'kendall.cu', package = 'gputools')
-    kernel_src <- readChar(filename, file.info(filename)$size)
-
-		a <- .C("RgpuKendall",
-			as.single(x), nx, as.single(y), ny, 
-			size, result = double(nx*ny),
-      kernel_src,
-      PACKAGE = "gputools")
-
-		pairs <- matrix(size, nx, ny)
-		return(list(coefficients = matrix(a$result, nx, ny), pairs = pairs))
-	} else {
-		stop("This correlation method is not yet supported. Sorry for any inconvenience.")
-	}
+    if(method == "kendall") {
+        res <- list(coefficients = corr, pairs = pairs)
+        if(test) {
+            z <- .kendallZ(x, y, corr, pairs)
+            dimnames(z) <- dn
+            res$z <- z
+            res$p.value <- 2 * pnorm(-abs(z))
+        }
+        return(res)
+    }
+    if(is.null(ts)) ts <- .tScore(corr, pairs)
+    dimnames(ts) <- dn
+    res <- list(coefficients = corr, ts = ts, pairs = pairs)
+    if(test) {
+        res$p.value <- 2 * pt(-abs(ts), pairs - 2)
+    }
+    res
 }
 
-gpuTtest <- function(goodPairs, coeffs) {
-	goodPairs <- as.single(goodPairs)
-	coeffs <- as.single(coeffs)
-
-	n <- as.integer(length(goodPairs))
-
-	.C("rtestT", NAOK = TRUE,
-		goodPairs, coeffs, n,
-		results = single(n),
-		PACKAGE = 'gputools')$results
+# The t statistic of correlations r from n pairs, as cor.test() computes
+# it: +-Inf at |r| = 1, NaN with fewer than three pairs.
+.tScore <- function(r, n) {
+    r[!is.na(r) & r > 1] <- 1
+    r[!is.na(r) & r < -1] <- -1
+    t <- r * sqrt((n - 2) / (1 - r^2))
+    t[!is.na(r) & n < 3] <- NaN
+    t
 }
 
-#gpuSignifFilter <- function(olddata) {
-#	rows <- as.integer(ncol(olddata))
-#	olddata <- as.single(olddata)
-#	newdata <- .C("gSignifFilter", NAOK = TRUE, PACKAGE = "gputools",
-#		olddata, numRows = rows,
-#		results = single(rows*6))
-#	numRows <- newdata$numRows
-#	results <- newdata$results[1:(numRows*6)]
-#	if(numRows != 0) {
-#		dim(results) <- c(6, numRows)
-#		results <- t(results)
-#	} else {
-#		results <- NULL
-#	}
-#	results
-#}
-#
-#pickGpu <- function(device = 0) {
-#	device <- as.integer(device)
-#	.C("rsetDevice", PACKAGE = "gputools", device)
-#}
-#
-#getGpu <- function() {
-#	.C("rgetDevice", PACKAGE = "gputools", device = integer(1))
-#	device
-#}
-#
-#formatPmccInput <- function(queryList, numImages, mins, maxes) {
-#	images  <- as.integer(queryList$IMAGESERIESID)
-#	xcoords <- as.integer(queryList$X)
-#	ycoords <- as.integer(queryList$Y)
-#	zcoords <- as.integer(queryList$Z)
-#	mins <- as.integer(mins)
-#	maxes <- as.integer(maxes)
-#
-#	xmax <- maxes[1]
-#	xmin <- mins[1]
-#	nx <- 1+abs(xmax - xmin)
-#
-#	ymax <- maxes[2]
-#	ymin <- mins[2]
-#	ny <- 1+abs(ymax - ymin)
-#
-#	zmax <- maxes[3]
-#	zmin <- mins[3]
-#	nz <- 1+abs(zmax - zmin)
-#
-#	size <- nx*ny*nz
-#	mins <- as.integer(c(xmin, ymin, zmin))
-#	maxes <- as.integer(c(xmax, ymax, zmax))
-#
-#	evs <- as.single(queryList$EV)
-#	numrows <- as.integer(length(images))
-#	numimages <- as.integer(numImages)
-#
-#	output <- single(numimages*size)
-#	output[1:length(output)] <- NA
-#	output <- .C("rformatInput", NAOK = TRUE, PACKAGE="gputools",
-#		images, xcoords, ycoords, 
-#		zcoords, mins, maxes, evs, numrows, numimages, output = output)$output
-#	output <- matrix(output, size, numimages)
-#}
-#
-# formatPmccOutput <- function(imagesA, imagesB, correlations, ts, pairCounts, 
-# 	structureid = 0, corrCut = -1.0, pairCut = 0) 
-# {
-# 	imagesA <- as.integer(imagesA)
-# 	nA <- as.integer(length(imagesA))
-# 
-# 	imagesB <- as.integer(imagesB)
-# 	nB <- as.integer(length(imagesB))
-# 
-# 	pairCounts <- as.integer(pairCounts)
-# 
-# 	structureid <- as.integer(structureid)
-# 	pairCut <- as.integer(pairCut)
-# 
-# 	corrCut <- as.double(corrCut)
-# 	correlations <- as.double(correlations)
-# 	ts <- as.double(ts)
-# 
-# 	output <- .C("rformatOutput", NAOK = TRUE, PACKAGE="gputools",
-# 		imagesA, nA, imagesB, nB,
-# 		structureid, corrCut, pairCut,
-# 		correlations, ts, pairCounts, 
-# 		results = double(nA*nB*6), numRows = integer(1))
-# 
-# 	numRows <- output$numRows
-# 	results <- output$results[1:(numRows*6)]
-# 	if(numRows != 0) {
-# 		dim(results) <- c(6, numRows)
-# 		results <- t(results)
-# 	} else {
-# 		results <- NULL
-# 	}
-# 	results
-# }
-#
-#hostSignifFilter <- function(olddata) {
-#	rows <- as.integer(ncol(olddata))
-#	olddata <- as.double(olddata)
-#	newdata <- .C("rSignifFilter", NAOK = TRUE, PACKAGE="gputools", 
-#		olddata, numRows = rows,
-#		results = double(rows*6))
-#	numRows <- newdata$numRows
-#	results <- newdata$results[1:(numRows*6)]
-#	if(numRows != 0) {
-#		dim(results) <- c(6, numRows)
-#		results <- t(results)
-#	} else {
-#		results <- NULL
-#	}
-#	results
-#}
-#
-#hostTtest <- function(goodPairs, coeffs) {
-#	n <- as.integer(length(goodPairs))
-#	goodPairs <- as.single(goodPairs)
-#	coeffs <- as.single(coeffs)
-#
-#	.C("rhostT", NAOK = TRUE, PACKAGE = "gputools", goodPairs, coeffs, n,
-#		results = single(n))$results
-#}
-#
-#hostKendall <- function(samplesA, samplesB) {
-#	na <- as.integer(ncol(samplesA))
-#	nb <- as.integer(ncol(samplesB))
-#	numSamples <- as.integer(nrow(samplesA))
-#	a <- .C("RpermHostKendall", PACKAGE = "gputools",
-#		as.single(samplesA), na, as.single(samplesB), 
-#		nb, numSamples, result = double(na*nb))
-#	a$result
-#	matrix(a$result, na, nb)
-#}
+# Kendall's z with cor.test(method = "kendall", exact = FALSE)'s tie
+# correction: S = tau_b sqrt((n0 - Tx)(n0 - Ty)) over its variance under
+# independence, from each pair's complete rows.
+.kendallZ <- function(x, y, tau, n) {
+    tieStats <- function(v) {
+        t <- table(v)
+        t <- as.numeric(t[t > 1])
+        c(t1 = sum(t * (t - 1)), t2 = sum(t * (t - 1) * (2 * t + 5)),
+          t3 = sum(t * (t - 1) * (t - 2)))
+    }
+    zOf <- function(tau, m, a1, a2, a3, b1, b2, b3) {
+        n0 <- m * (m - 1) / 2
+        S <- tau * sqrt((n0 - a1 / 2) * (n0 - b1 / 2))
+        v <- (m * (m - 1) * (2 * m + 5) - a2 - b2) / 18 +
+            a1 * b1 / (2 * m * (m - 1)) + a3 * b3 / (9 * m * (m - 1) * (m - 2))
+        S / sqrt(v)
+    }
+    # columns without missing values: their own tie counts, all pairs at once
+    sx <- vapply(seq_len(ncol(x)), function(i) tieStats(x[, i]), numeric(3))
+    sy <- vapply(seq_len(ncol(y)), function(j) tieStats(y[, j]), numeric(3))
+    a <- function(k) matrix(sx[k, ], ncol(x), ncol(y))
+    b <- function(k) matrix(sy[k, ], ncol(x), ncol(y), byrow = TRUE)
+    z <- zOf(tau, n, a(1), a(2), a(3), b(1), b(2), b(3))
+    # pairs with a missing value: ties among that pair's complete rows
+    naX <- colSums(is.na(x)) > 0
+    naY <- colSums(is.na(y)) > 0
+    todo <- which(outer(naX, naY, "|") & !is.na(tau), arr.ind = TRUE)
+    for(r in seq_len(nrow(todo))) {
+        i <- todo[r, 1]
+        j <- todo[r, 2]
+        ok <- !(is.na(x[, i]) | is.na(y[, j]))
+        ta <- tieStats(x[ok, i])
+        tb <- tieStats(y[ok, j])
+        z[i, j] <- zOf(tau[i, j], n[i, j], ta[[1]], ta[[2]], ta[[3]],
+                       tb[[1]], tb[[2]], tb[[3]])
+    }
+    z
+}
+
+gpuTtest <- function(goodPairs, coeffs,
+    precision = getOption("gputools.precision", "single")) {
+    precision <- .precision(precision)
+    .Call(C_gpuTtest, as.double(goodPairs), as.double(coeffs), precision)
+}

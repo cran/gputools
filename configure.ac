@@ -1,144 +1,157 @@
-AC_INIT([gputools], 1.1)
-AC_CONFIG_AUX_DIR([tools])
+AC_INIT([gputools], [2.0.0])
 
-AC_ARG_WITH([r],
-  AC_HELP_STRING([--with-r=r],
-    [path to r install directory, e.g. /usr/lib64/R]),
-    [R_HOME="$withval"])
+dnl Locating CUDA, first match wins:
+dnl   --with-cuda-include / --with-cuda-lib (each overrides its half)
+dnl   --with-cuda-home
+dnl   $CUDA_HOME, then $CUDA_PATH
+dnl   the directory above nvcc on the PATH
+dnl   /usr/local/cuda
+dnl Headers and libraries are looked for in both the toolkit layout
+dnl (include/, lib64/) and the conda layout (targets/<arch>/include, lib/).
+dnl
+dnl Without a usable CUDA the package is still built, from src/nocuda.cpp
+dnl alone: it loads, says at attach time why it cannot use a GPU, and every
+dnl GPU function stops with the same explanation. That is what a build
+dnl server without CUDA (r-universe, CI) produces.
 
-AC_ARG_WITH([r-include],
-  AC_HELP_STRING([--with-r-include=r-include],
-    [path to r header files, e.g. /usr/share/R/include]),
-    [R_INCLUDE="$withval"])
-
-AC_ARG_WITH([r-lib],
-  AC_HELP_STRING([--with-r-lib=r-lib],
-    [path to r libs, e.g. /usr/lib64/R/lib]),
-    [R_LIB="$withval"])
-
-AC_ARG_WITH([cuda],
-  AC_HELP_STRING([--with-cuda=cuda],
-    [path to cuda toolkit, e.g. /usr/local/cuda]),
-    [CUDA_HOME="$withval"])
-
-AC_ARG_WITH([nvcc],
-  AC_HELP_STRING([--with-nvcc=nvcc],
-    [path of cuda compiler, e.g. /usr/local/cuda/bin/nvcc]),
-    [NVCC="$withval"])
-
+AC_ARG_WITH([cuda-home],
+  AS_HELP_STRING([--with-cuda-home=DIR], [the CUDA toolkit installation]),
+  [cuda_home=$withval])
 AC_ARG_WITH([cuda-include],
-  AC_HELP_STRING([--with-cuda-include=cuda-include],
-    [path to cuda header files, e.g. /usr/local/cuda/include]),
-    [CUDA_INCLUDE="$withval"])
-
+  AS_HELP_STRING([--with-cuda-include=DIR], [the CUDA header files]),
+  [cuda_include=$withval])
 AC_ARG_WITH([cuda-lib],
-  AC_HELP_STRING([--with-cuda-lib=cuda-lib],
-    [path to cuda libs, e.g. /usr/local/cuda/lib64]),
-    [CUDA_LIB="$withval"])
+  AS_HELP_STRING([--with-cuda-lib=DIR], [the CUDA libraries]),
+  [cuda_lib=$withval])
 
-AC_MSG_CHECKING("the cuda compiler nvcc")
-AC_PATH_PROG([NVCC], [nvcc],
-             ["no"],
-             [$PATH$PATH_SEPARATOR/usr/local/cuda/bin$PATH_SEPARATOR$CUDA_HOME/bin])
-AS_IF([test "x$NVCC" = "xno"],
-      [AC_MSG_ERROR(["nvcc compiler not found! Try --with-nvcc=/usr/local/cuda/bin/nvcc"])])
-
-
-AC_MSG_CHECKING("R")
-
-if test -z "${R_HOME}"; then
-  : ${R_HOME=`R RHOME`}
-  if test -z "${R_HOME}"; then
-    echo "could not determine R_HOME"
-    exit 1
+if test -z "${cuda_home}"; then
+  if test -n "${CUDA_HOME}"; then
+    cuda_home=${CUDA_HOME}
+  elif test -n "${CUDA_PATH}"; then
+    cuda_home=${CUDA_PATH}
+  else
+    AC_PATH_PROG([NVCC], [nvcc])
+    if test -n "${NVCC}"; then
+      cuda_home=`dirname "${NVCC}"`
+      cuda_home=`dirname "${cuda_home}"`
+    elif test -d /usr/local/cuda; then
+      cuda_home=/usr/local/cuda
+    fi
   fi
 fi
-AC_MSG_RESULT("using ${R_HOME} for the root of the R install directory")
 
-if test -z "${R_INCLUDE}"; then
-  R_INCLUDE="${R_HOME}/include"
-fi
-AC_MSG_RESULT("using ${R_INCLUDE} for R header files")
-
-if test -n "${R_LIB}"; then
-  AC_MSG_RESULT("using ${R_LIB} for R shared libraries")
-fi
-
-AS_IF([test "x$R_INCLUDE" != "x"],
-      [EXTRA_INCLUDES="${EXTRA_INCLUDES} -I${R_INCLUDE} "])
-AS_IF([test "x$R_LIB" != "x"],
-      [EXTRA_LIBS="${EXTRA_LIBS} -L${R_LIB} -lR "])
-
-AS_IF([test "x$CUDA_INCLUDE" != "x"],
-      [EXTRA_INCLUDES="${EXTRA_INCLUDES} -I${CUDA_INCLUDE} "])
-AS_IF([test "x$CUDA_LIB" != "x"],
-      [EXTRA_LIBS="${EXTRA_LIBS} -L${CUDA_LIB} -lcublas -lnvrtc -lcuda "])
-
-AC_MSG_CHECKING([for rpath flag style])
-AC_PROG_CC([cc cl gcc])
-saved_cflags="${CFLAGS}"
-CFLAGS="-Wl,--rpath=."
-AC_LINK_IFELSE([AC_LANG_SOURCE([int main(){ return 0;}])],
-  [RPATH_FLAG=gnu],
-  [RPATH_FLAG=none])
-
-if test "x$RPATH_FLAG" = "xnone"; then
-  CFLAGS="-Wl,-rpath,."
-  AC_LINK_IFELSE([AC_LANG_SOURCE([int main(){ return 0;}])],
-    [RPATH_FLAG=llvm],
-    [RPATH_FLAG=none])
-fi
-CFLAGS="${saved_cflags}"
-AC_MSG_RESULT([rpath flag style... ${RPATH_FLAG}])
-
-CPICFLAGS=`"${R_HOME}/bin/R" CMD config CPICFLAGS`
-
-EXTRA_CFLAGS=`"${R_HOME}/bin/R" CMD config CFLAGS`
-EXTRA_CPPFLAGS=`"${R_HOME}/bin/R" CMD config CPPFLAGS`
-
-RPATH=""
-if test "x$CUDA_LIB" != "x"; then
-if test "x$RPATH_FLAG" = "xgnu"; then
-  RPATH="-rpath=\"${CUDA_LIB}\""
+if test -z "${cuda_include}" && test -n "${cuda_home}"; then
+  for d in "${cuda_home}/include" "${cuda_home}"/targets/*/include; do
+    if test -f "${d}/cuda_runtime.h"; then
+      cuda_include=${d}
+      break
+    fi
+  done
 fi
 
-if test "x$RPATH_FLAG" = "xllvm"; then
-  RPATH="-rpath,\"${CUDA_LIB}\""
+if test -z "${cuda_lib}" && test -n "${cuda_home}"; then
+  for d in "${cuda_home}/lib64" "${cuda_home}/lib" "${cuda_home}"/targets/*/lib; do
+    if ls "${d}"/libcudart.* >/dev/null 2>&1; then
+      cuda_lib=${d}
+      break
+    fi
+  done
 fi
 
-if test "x$RPATH_FLAG" = "xnone"; then
-  RPATH=""
+dnl no_cuda records why CUDA cannot be used; empty means it can.
+no_cuda=
+
+AC_MSG_CHECKING([for the CUDA headers])
+if test -n "${cuda_include}" && test -f "${cuda_include}/cuda_runtime.h"; then
+  AC_MSG_RESULT([${cuda_include}])
+else
+  AC_MSG_RESULT([no])
+  no_cuda="the CUDA toolkit was not found"
 fi
+if test -z "${no_cuda}"; then
+  AC_MSG_CHECKING([for the CUDA libraries])
+  if test -n "${cuda_lib}"; then
+    AC_MSG_RESULT([${cuda_lib}])
+  else
+    AC_MSG_RESULT([no])
+    no_cuda="the CUDA runtime library (libcudart) was not found"
+  fi
 fi
 
-AC_CANONICAL_HOST
-case $host_os in
-  darwin* )
-    DARWIN_LDFLAGS=`R CMD config --ldflags`
-    ;;
-  *)
-    DARWIN_LDFLAGS=""
-    ;;
-esac
+if test -z "${no_cuda}"; then
+  dnl Compile the checks with R's own compiler and flags.
+  : ${R_HOME=`R RHOME`}
+  if test -z "${R_HOME}"; then
+    AC_MSG_ERROR([could not determine R_HOME])
+  fi
+  CXX=`"${R_HOME}/bin/R" CMD config CXX`
+  CXXFLAGS=`"${R_HOME}/bin/R" CMD config CXXFLAGS`
+  CPPFLAGS="-I${cuda_include} `"${R_HOME}/bin/R" CMD config CPPFLAGS`"
+  LDFLAGS="-L${cuda_lib} `"${R_HOME}/bin/R" CMD config LDFLAGS`"
+  AC_LANG([C++])
 
-EXTRA_LDFLAGS="${RPATH} ${DARWIN_LDFLAGS} ${EXTRA_LDFLAGS}"
-
-if test "x$CUDA_LIB" = "x"; then
-  EXTRA_LIBS="${EXTRA_LIBS} -lcublas -lnvrtc -lcuda "
+  AC_CHECK_HEADERS([cuda.h cuda_runtime.h nvrtc.h cublas_v2.h cusolverDn.h], ,
+    [no_cuda="CUDA header $ac_header is missing from ${cuda_include}"
+     break])
 fi
 
-AC_SUBST(NVCC)
+if test -z "${no_cuda}"; then
+  AC_MSG_CHECKING([for CUDA 11.7 or later])
+  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <cuda_runtime_api.h>
+#if CUDART_VERSION < 11070
+#error too old
+#endif]], [])],
+    [AC_MSG_RESULT([yes])],
+    [AC_MSG_RESULT([no])
+     no_cuda="the CUDA toolkit in ${cuda_include} is older than 11.7"])
+fi
 
-AC_SUBST(EXTRA_CFLAGS)
-AC_SUBST(EXTRA_CPPFLAGS)
-AC_SUBST(EXTRA_LDFLAGS)
+if test -z "${no_cuda}"; then
+  AC_SEARCH_LIBS([cudaGetDriverEntryPoint], [cudart], ,
+    [no_cuda="no CUDA runtime library (libcudart) in ${cuda_lib}"])
+fi
+if test -z "${no_cuda}"; then
+  AC_SEARCH_LIBS([nvrtcCreateProgram], [nvrtc], ,
+    [no_cuda="no NVRTC library (libnvrtc) in ${cuda_lib}"])
+fi
+if test -z "${no_cuda}"; then
+  AC_SEARCH_LIBS([cublasCreate_v2], [cublas], ,
+    [no_cuda="no cuBLAS library (libcublas) in ${cuda_lib}"])
+fi
+if test -z "${no_cuda}"; then
+  AC_SEARCH_LIBS([cusolverDnCreate], [cusolver], ,
+    [no_cuda="no cuSOLVER library (libcusolver) in ${cuda_lib}"])
+fi
 
-AC_SUBST(EXTRA_INCLUDES)
-AC_SUBST(EXTRA_LIBS)
+if test -z "${no_cuda}"; then
+  CUDA_CPPFLAGS="-I${cuda_include}"
+  CUDA_LIBS="-L${cuda_lib} -Wl,-rpath,${cuda_lib} ${LIBS}"
+  GPUTOOLS_OBJECTS=
+  for f in src/*.cpp; do
+    case "$f" in
+      src/nocuda.cpp) ;;
+      *) GPUTOOLS_OBJECTS="${GPUTOOLS_OBJECTS} `basename "$f" .cpp`.o" ;;
+    esac
+  done
+else
+  CUDA_CPPFLAGS=
+  CUDA_LIBS=
+  GPUTOOLS_OBJECTS=nocuda.o
+  AC_MSG_WARN([
 
-AC_SUBST(CPICFLAGS)
+*** gputools is being installed WITHOUT CUDA: ${no_cuda}.
+*** The package will load, but none of its GPU functions will run.
+***
+*** To use the GPU, install the NVIDIA CUDA toolkit (11.7 or later),
+*** make it findable -- set CUDA_HOME to its directory, or put nvcc on
+*** the PATH -- and reinstall gputools. See the INSTALL file.
+])
+fi
+NO_CUDA_REASON=${no_cuda}
 
-AC_SUBST(RPATH)
-
-AC_CONFIG_FILES([src/Makefile])
+AC_SUBST([CUDA_CPPFLAGS])
+AC_SUBST([CUDA_LIBS])
+AC_SUBST([GPUTOOLS_OBJECTS])
+AC_SUBST([NO_CUDA_REASON])
+AC_CONFIG_FILES([src/Makevars src/nocuda-reason.h])
 AC_OUTPUT

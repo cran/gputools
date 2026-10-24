@@ -1,4 +1,6 @@
-gpuSolve <- function(x, y=NULL) {
+gpuSolve <- function(x, y=NULL,
+	precision = getOption("gputools.precision", "single")) {
+	precision <- .precision(precision)
 	x <- as.matrix(x)
 	if(is.complex(x)) {
 		stop("complex gpuSolve not yet supported")
@@ -9,31 +11,28 @@ gpuSolve <- function(x, y=NULL) {
 	if(p > n) {
 		stop("x represents an underdetermined system")
 	}
+	storage.mode(x) <- "double"
 
-	x.qr <- qr(x)
-	x.q <- qr.Q(x.qr)
-	x.r <- qr.R(x.qr)
-
+	# solve() names the solution's rows by x's columns
 	if(is.null(y)) {
-		myCall <- .C("rGetInverseFromQR",
-			as.integer(n), as.integer(p),
-			as.single(x.q), as.single(x.r),
-			inverse = single(n * p),
-			PACKAGE='gputools'
-		)
-		x.inverse <- matrix(myCall$inverse, p, n)
-		return(x.inverse)
-	} else {
-		y <- as.single(y)
-		if(length(y) != n) {
-			stop("y must have length nrows(x)")
-		}
-		myCall <- .C("rSolveFromQR",
-			as.integer(n), as.integer(p),
-			as.single(x.q), as.single(x.r),
-			y, solution = single(p),
-			PACKAGE='gputools'
-		)
-		return(myCall$solution)
+		b <- diag(n)
+		sol <- .Call(C_gpuSolve, x, b, precision)
+		dimnames(sol) <- rev(dimnames(x))
+		return(sol)
 	}
+
+	isVector <- is.null(dim(y))
+	b <- as.matrix(y)
+	if(nrow(b) != n) {
+		stop("y must have length nrows(x)")
+	}
+	storage.mode(b) <- "double"
+	sol <- .Call(C_gpuSolve, x, b, precision)
+	if(isVector) {
+		sol <- drop(sol)
+		names(sol) <- colnames(x)
+	} else {
+		dimnames(sol) <- list(colnames(x), colnames(b))
+	}
+	sol
 }
